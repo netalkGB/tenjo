@@ -1,0 +1,1 @@
+export { fetchWhoami } from './whoami';

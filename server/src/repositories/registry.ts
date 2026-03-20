@@ -1,0 +1,14 @@
+import { pool } from '../db/client';
+import { ThreadRepository } from './ThreadRepository';
+import { MessageRepository } from './MessageRepository';
+import { GlobalSettingRepository } from './GlobalSettingRepository';
+import { UserRepository } from './UserRepository';
+import { InvitationCodeRepository } from './InvitationCodeRepository';
+import { ToolApprovalRuleRepository } from './ToolApprovalRuleRepository';
+
+export const threadRepo = new ThreadRepository(pool);
+export const messageRepo = new MessageRepository(pool);
+export const globalSettingRepo = new GlobalSettingRepository(pool);
+export const userRepo = new UserRepository(pool);
+export const invitationCodeRepo = new InvitationCodeRepository(pool);
+export const toolApprovalRuleRepo = new ToolApprovalRuleRepository(pool);
