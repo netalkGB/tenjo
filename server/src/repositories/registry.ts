@@ -5,6 +5,8 @@ import { GlobalSettingRepository } from './GlobalSettingRepository';
 import { UserRepository } from './UserRepository';
 import { InvitationCodeRepository } from './InvitationCodeRepository';
 import { ToolApprovalRuleRepository } from './ToolApprovalRuleRepository';
+import { CredentialStoreRepository } from './CredentialStoreRepository';
+import { PendingOAuthFlowRepository } from './PendingOAuthFlowRepository';
 
 export const threadRepo = new ThreadRepository(pool);
 export const messageRepo = new MessageRepository(pool);
@@ -12,3 +14,5 @@ export const globalSettingRepo = new GlobalSettingRepository(pool);
 export const userRepo = new UserRepository(pool);
 export const invitationCodeRepo = new InvitationCodeRepository(pool);
 export const toolApprovalRuleRepo = new ToolApprovalRuleRepository(pool);
+export const credentialStoreRepo = new CredentialStoreRepository(pool);
+export const pendingOAuthFlowRepo = new PendingOAuthFlowRepository(pool);

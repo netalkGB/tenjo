@@ -1,5 +1,6 @@
 import express from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { z } from 'zod';
 import { requireCsrfToken } from '../../middleware/csrf';
 import { requireAuth } from '../../middleware/auth';
 import { requireAdmin } from '../../middleware/requireAdmin';
@@ -9,11 +10,11 @@ import {
   type UserRole,
   typedHandler
 } from '../../types/api';
-import type { ModelEntry } from '../../repositories/GlobalSettingRepository';
-import {
-  type McpServersConfig,
-  normalizeMcpServerConfig
-} from '../../utils/mcpTransportFactory';
+import type {
+  ModelEntry,
+  ModelEntryResponse
+} from '../../repositories/GlobalSettingRepository';
+import type { McpServersConfig } from 'tenjo-chat-engine';
 import { McpToolService } from '../../services/McpToolService';
 import {
   UserService,
@@ -30,24 +31,32 @@ import {
 } from '../../services/InvitationCodeService';
 import { ToolApprovalRuleService } from '../../services/ToolApprovalRuleService';
 import {
-  globalSettingRepo,
   userRepo,
   toolApprovalRuleRepo,
   invitationCodeRepo
 } from '../../repositories/registry';
 import {
-  GlobalSettingService,
+  globalSettingService,
+  credentialStoreService,
+  mcpOAuthService
+} from '../../services/registry';
+import {
   ModelNotFoundError,
   ModelDuplicateError
 } from '../../services/GlobalSettingService';
+import {
+  McpOAuthError,
+  McpOAuthStateNotFoundError
+} from '../../services/McpOAuthService';
 import { HttpError } from '../../errors/HttpError';
-import { OpenAIChatApiClient } from 'tenjo-chat-engine';
+import { OpenAIChatApiClient, LocalChatApiClient } from 'tenjo-chat-engine';
+import { createChatApiClient } from '../../factories/chatClientFactory';
+import { getOAuthRedirectUrl } from '../../utils/env';
 import logger from '../../logger';
 
 export const settingsRouter = express.Router();
 
-const globalSettingService = new GlobalSettingService(globalSettingRepo);
-const mcpToolService = new McpToolService();
+const mcpToolService = new McpToolService(credentialStoreService);
 const userService = new UserService(userRepo);
 const invitationCodeService = new InvitationCodeService(invitationCodeRepo);
 const toolApprovalRuleService = new ToolApprovalRuleService(
@@ -61,7 +70,7 @@ const toolApprovalRuleService = new ToolApprovalRuleService(
  */
 interface GetModelsResponse {
   activeId: string;
-  models: Omit<ModelEntry, 'token'>[];
+  models: ModelEntryResponse[];
 }
 
 settingsRouter.get(
@@ -74,23 +83,15 @@ settingsRouter.get(
   ) => {
     const sessionUser = req.user as SessionUser;
 
-    const modelSettings = await globalSettingService.getModelSettings();
+    const clientData = await globalSettingService.getModelSettingsForClient();
 
     // Get per-user activeModelId
     const userActiveModelId = await userService.getActiveModelId(
       sessionUser.id
     );
-    const activeId = userActiveModelId ?? modelSettings.activeId;
+    const activeId = userActiveModelId ?? clientData.activeId;
 
-    // Return with tokens excluded
-    const models = modelSettings.models.map((m) => ({
-      id: m.id,
-      type: m.type,
-      baseUrl: m.baseUrl,
-      model: m.model
-    }));
-
-    res.json({ activeId, models });
+    res.json({ activeId, models: clientData.models });
   }
 );
 
@@ -163,7 +164,7 @@ interface AddModelRequest {
 }
 
 interface AddModelResponse {
-  model: Omit<ModelEntry, 'token'>;
+  model: ModelEntryResponse;
 }
 
 settingsRouter.post(
@@ -184,24 +185,25 @@ settingsRouter.post(
           );
         }
 
+        const maxContextLength = await fetchMaxContextLength(
+          type as ModelEntry['type'],
+          baseUrl,
+          model,
+          token || null
+        );
+
         const newEntry = await globalSettingService.addModel(
           {
             type: type as ModelEntry['type'],
             baseUrl,
             model,
-            token: token || ''
+            token: token || undefined,
+            maxContextLength: maxContextLength ?? undefined
           },
           sessionUser.id
         );
 
-        res.json({
-          model: {
-            id: newEntry.id,
-            type: newEntry.type,
-            baseUrl: newEntry.baseUrl,
-            model: newEntry.model
-          }
-        });
+        res.json({ model: newEntry });
       } catch (err) {
         if (err instanceof ModelDuplicateError) {
           throw new HttpError(StatusCodes.CONFLICT, err.message);
@@ -254,7 +256,7 @@ settingsRouter.delete(
 interface ToolApprovalRule {
   id: string;
   toolName: string;
-  autoApprove: boolean;
+  approve: string;
 }
 
 interface GetToolApprovalRulesResponse {
@@ -284,7 +286,7 @@ settingsRouter.get(
 interface UpsertToolApprovalRuleRequest {
   body: {
     toolName: string;
-    autoApprove: boolean;
+    approve: string;
   };
 }
 
@@ -301,19 +303,20 @@ settingsRouter.post(
     UpsertToolApprovalRuleResponse | ErrorResponse
   >(async (req, res) => {
     const sessionUser = req.user as SessionUser;
-    const { toolName, autoApprove } = req.body;
+    const { toolName, approve } = req.body;
 
-    if (!toolName || typeof autoApprove !== 'boolean') {
+    const validApproveValues = ['auto_approve', 'manual', 'banned'];
+    if (!toolName || !validApproveValues.includes(approve)) {
       throw new HttpError(
         StatusCodes.BAD_REQUEST,
-        'toolName and autoApprove are required'
+        'toolName and approve (auto_approve | manual | banned) are required'
       );
     }
 
     const rule = await toolApprovalRuleService.upsert(
       sessionUser.id,
       toolName,
-      autoApprove
+      approve as 'auto_approve' | 'manual' | 'banned'
     );
 
     res.json({ rule });
@@ -362,7 +365,7 @@ settingsRouter.delete(
 interface BulkUpdateToolApprovalRulesRequest {
   body: {
     toolNames: string[];
-    autoApprove: boolean;
+    approve: string;
   };
 }
 
@@ -379,19 +382,20 @@ settingsRouter.put(
     BulkUpdateToolApprovalRulesResponse | ErrorResponse
   >(async (req, res) => {
     const sessionUser = req.user as SessionUser;
-    const { toolNames, autoApprove } = req.body;
+    const { toolNames, approve } = req.body;
 
-    if (!Array.isArray(toolNames) || typeof autoApprove !== 'boolean') {
+    const validApproveValues = ['auto_approve', 'manual', 'banned'];
+    if (!Array.isArray(toolNames) || !validApproveValues.includes(approve)) {
       throw new HttpError(
         StatusCodes.BAD_REQUEST,
-        'toolNames (array) and autoApprove (boolean) are required'
+        'toolNames (array) and approve (auto_approve | manual | banned) are required'
       );
     }
 
     await toolApprovalRuleService.bulkUpdate(
       sessionUser.id,
       toolNames,
-      autoApprove
+      approve as 'auto_approve' | 'manual' | 'banned'
     );
 
     const rules = await toolApprovalRuleService.findByUserId(sessionUser.id);
@@ -432,6 +436,7 @@ settingsRouter.patch(
  */
 interface GetMcpServersResponse {
   mcpServers: McpServersConfig;
+  oauthCallbackUrl: string;
 }
 
 settingsRouter.get(
@@ -442,19 +447,25 @@ settingsRouter.get(
     _req: express.Request,
     res: express.Response<GetMcpServersResponse | ErrorResponse>
   ) => {
-    const settings = await globalSettingService.getGlobalSettings();
-    const rawServers = (settings.mcpServers ?? {}) as unknown as Record<
-      string,
-      Record<string, unknown>
-    >;
+    const mcpServers = await globalSettingService.getMcpServersConfig();
 
-    // Backward compatibility: normalize configs without a type field as stdio
-    const mcpServers: McpServersConfig = {};
-    for (const [name, config] of Object.entries(rawServers)) {
-      mcpServers[name] = normalizeMcpServerConfig(config);
+    // Sanitize oauth-http configs before sending to the client:
+    // - Strip credentialId (internal DB reference) and clientSecret (sensitive)
+    // - Inject `authorized` flag so the client can display status
+    for (const config of Object.values(mcpServers)) {
+      if (config.type === 'oauth-http') {
+        const raw = config as unknown as Record<string, unknown>;
+        const credentialId = raw.credentialId as string | undefined;
+        raw.authorized = credentialId
+          ? await credentialStoreService.exists(credentialId)
+          : false;
+        delete raw.credentialId;
+        delete raw.clientSecret;
+      }
     }
 
-    res.json({ mcpServers });
+    const oauthCallbackUrl = getOAuthRedirectUrl();
+    res.json({ mcpServers, oauthCallbackUrl });
   }
 );
 
@@ -464,6 +475,7 @@ settingsRouter.get(
  */
 interface GetMcpToolsResponse {
   tools: Record<string, string[]>;
+  errors: Record<string, string>;
 }
 
 settingsRouter.get(
@@ -483,7 +495,7 @@ settingsRouter.get(
       logger.warn('Some MCP servers failed to connect:', errors);
     }
 
-    res.json({ tools });
+    res.json({ tools, errors });
   }
 );
 
@@ -515,6 +527,22 @@ settingsRouter.put(
 
     validateMcpServersConfig(mcpServers);
 
+    // Restore server-side fields (credentialId) that are stripped from
+    // the GET response for security. Without this, saving a new server
+    // would erase credentialId from existing OAuth servers.
+    const existingServers = await globalSettingService.getMcpServersConfig();
+    for (const [name, config] of Object.entries(mcpServers)) {
+      if (config.type === 'oauth-http') {
+        const existing = existingServers[name] as unknown as
+          | (Record<string, unknown> & { type: string })
+          | undefined;
+        if (existing?.type === 'oauth-http' && existing.credentialId) {
+          (config as unknown as Record<string, unknown>).credentialId =
+            existing.credentialId;
+        }
+      }
+    }
+
     // Validate connectivity BEFORE saving to DB
     const { tools, errors } =
       await mcpToolService.validateAndGetToolsByServer(mcpServers);
@@ -543,6 +571,29 @@ settingsRouter.put(
   })
 );
 
+async function fetchMaxContextLength(
+  type: ModelEntry['type'],
+  baseUrl: string,
+  model: string,
+  token: string | null
+): Promise<number | null> {
+  try {
+    const client = createChatApiClient({ type, baseUrl, model, token }, []);
+    if (client instanceof LocalChatApiClient) {
+      return await client.getMaxContextLength();
+    }
+    return null;
+  } catch (error) {
+    logger.warn('Failed to fetch max context length', {
+      type,
+      baseUrl,
+      model,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return null;
+  }
+}
+
 function validateMcpServersConfig(mcpServers: McpServersConfig): void {
   if (
     typeof mcpServers !== 'object' ||
@@ -570,6 +621,13 @@ function validateMcpServersConfig(mcpServers: McpServersConfig): void {
         throw new HttpError(
           StatusCodes.BAD_REQUEST,
           `Server "${name}" (http) must have a url property`
+        );
+      }
+    } else if (serverType === 'oauth-http') {
+      if (!('url' in config) || !config.url || typeof config.url !== 'string') {
+        throw new HttpError(
+          StatusCodes.BAD_REQUEST,
+          `Server "${name}" (oauth-http) must have a url property`
         );
       }
     } else {
@@ -869,4 +927,153 @@ settingsRouter.patch(
       }
     }
   )
+);
+
+/*
+ * GET /api/settings/preferences
+ * Returns the user's language and theme preferences.
+ */
+interface GetPreferencesResponse {
+  language?: string;
+  theme?: string;
+}
+
+settingsRouter.get(
+  '/preferences',
+  requireAuth,
+  async (
+    req: express.Request,
+    res: express.Response<GetPreferencesResponse | ErrorResponse>
+  ) => {
+    const sessionUser = req.user as SessionUser;
+    const prefs = await userService.getUserPreferences(sessionUser.id);
+    res.json(prefs);
+  }
+);
+
+/*
+ * PATCH /api/settings/preferences
+ * Updates the user's language and theme preferences.
+ */
+interface UpdatePreferencesRequest {
+  body: { language?: string; theme?: string };
+}
+
+interface UpdatePreferencesResponse {
+  success: boolean;
+}
+
+settingsRouter.patch(
+  '/preferences',
+  requireCsrfToken,
+  requireAuth,
+  typedHandler<
+    UpdatePreferencesRequest,
+    UpdatePreferencesResponse | ErrorResponse
+  >(async (req, res) => {
+    const sessionUser = req.user as SessionUser;
+    const { language, theme } = req.body;
+    await userService.updateUserPreferences(sessionUser.id, {
+      language,
+      theme
+    });
+    res.json({ success: true });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// OAuth MCP Server Authentication Flow
+// ---------------------------------------------------------------------------
+
+const oauthAuthorizeSchema = z.object({
+  serverName: z.string().min(1),
+  url: z.string().min(1),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional()
+});
+
+/*
+ * POST /api/settings/mcp-oauth/authorize
+ * Initiates the OAuth flow for an MCP server (admin only).
+ * Returns an authorization URL that the frontend should open in a popup.
+ */
+settingsRouter.post(
+  '/mcp-oauth/authorize',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  async (req: express.Request, res: express.Response) => {
+    const parseResult = oauthAuthorizeSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      const messages = parseResult.error.issues
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join(', ');
+      res.status(StatusCodes.BAD_REQUEST).json({ message: messages });
+      return;
+    }
+
+    const sessionUser = req.user as SessionUser;
+
+    try {
+      const result = await mcpOAuthService.authorize(
+        parseResult.data,
+        sessionUser.id
+      );
+      res.json(result);
+    } catch (error: unknown) {
+      if (error instanceof McpOAuthError) {
+        res
+          .status(StatusCodes.INTERNAL_SERVER_ERROR)
+          .json({ message: error.message });
+        return;
+      }
+      throw error;
+    }
+  }
+);
+
+/*
+ * GET /api/settings/mcp-oauth/callback
+ * OAuth redirect callback — called by the OAuth provider, not by the frontend.
+ * No CSRF / auth middleware since this is an external redirect.
+ */
+settingsRouter.get(
+  '/mcp-oauth/callback',
+  async (req: express.Request, res: express.Response) => {
+    const { code, state: stateId } = req.query;
+
+    if (
+      !code ||
+      !stateId ||
+      typeof code !== 'string' ||
+      typeof stateId !== 'string'
+    ) {
+      res
+        .status(StatusCodes.BAD_REQUEST)
+        .send('Missing code or state parameter');
+      return;
+    }
+
+    try {
+      const result = await mcpOAuthService.handleCallback({
+        code,
+        state: stateId
+      });
+      res.render('oauth-callback', {
+        success: true,
+        serverName: result.serverName
+      });
+    } catch (error: unknown) {
+      if (error instanceof McpOAuthStateNotFoundError) {
+        res.status(StatusCodes.BAD_REQUEST).send(error.message);
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(StatusCodes.INTERNAL_SERVER_ERROR).render('oauth-callback', {
+        success: false,
+        errorMessage: message
+      });
+    }
+  }
 );

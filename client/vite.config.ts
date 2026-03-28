@@ -48,6 +48,42 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router'],
+          markdown: [
+            'react-markdown',
+            'rehype-raw',
+            'remark-gfm',
+          ],
+          highlight: [
+            'rehype-highlight',
+          ],
+          ui: [
+            '@radix-ui/react-avatar',
+            '@radix-ui/react-collapsible',
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-label',
+            '@radix-ui/react-select',
+            '@radix-ui/react-separator',
+            '@radix-ui/react-slot',
+            '@radix-ui/react-tooltip',
+            'lucide-react',
+            'cmdk',
+            '@lingui/core',
+            '@lingui/react',
+            'axios',
+            'zod',
+            'react-virtuoso',
+            'react-error-boundary',
+          ],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

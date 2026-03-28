@@ -5,9 +5,12 @@ import { requireAuth } from '../../middleware/auth';
 import {
   threadRepo,
   messageRepo,
-  toolApprovalRuleRepo,
-  globalSettingRepo
+  toolApprovalRuleRepo
 } from '../../repositories/registry';
+import {
+  globalSettingService,
+  credentialStoreService
+} from '../../services/registry';
 import {
   type ErrorResponse,
   type SessionUser,
@@ -15,8 +18,8 @@ import {
 } from '../../types/api';
 import { HttpError } from '../../errors/HttpError';
 import type { Thread } from '../../repositories/ThreadRepository';
-import { GlobalSettingService } from '../../services/GlobalSettingService';
 import { McpToolService } from '../../services/McpToolService';
+import type { McpClientManager } from 'tenjo-chat-engine';
 import { createChatClient } from '../../factories/chatClientFactory';
 import { toolApprovalEmitter } from '../../services/ToolApprovalEmitter';
 import {
@@ -48,8 +51,7 @@ function createStreamWriter(res: express.Response): StreamWriter {
   };
 }
 
-const globalSettingService = new GlobalSettingService(globalSettingRepo);
-const mcpToolService = new McpToolService();
+const mcpToolService = new McpToolService(credentialStoreService);
 const threadService = new ThreadService(threadRepo, messageRepo);
 const messageService = new MessageService(
   messageRepo,
@@ -112,11 +114,7 @@ chatRouter.post(
     const { body } = req;
     const sessionUser = req.user as SessionUser;
 
-    let mcpClientManager:
-      | Awaited<
-          ReturnType<typeof mcpToolService.initializeMcpConnection>
-        >['mcpClientManager']
-      | undefined;
+    let mcpClientManager: McpClientManager | undefined;
 
     try {
       const thread = await threadService.verifyThreadOwnership(
@@ -129,13 +127,14 @@ chatRouter.post(
       );
       const mcpServers = await globalSettingService.getMcpServersConfig();
 
-      const { mcpClientManager: mcpManager, tools } =
+      const { mcpClientManager: mcpManager, tools: mcpTools } =
         await mcpToolService.initializeMcpConnection(
           mcpServers,
           body.enabledTools
         );
       mcpClientManager = mcpManager;
 
+      const tools = [...mcpTools];
       const chatClient = createChatClient(modelConfig, tools);
 
       if (body.parentMessageId) {
@@ -162,6 +161,7 @@ chatRouter.post(
       // Generate title before sending done event (chat chunks are already sent)
       let title: string | undefined;
       if (shouldGenerateTitle) {
+        res.write(`data: ${JSON.stringify({ generatingTitle: true })}\n\n`);
         const generatedTitle = await messageService.generateTitle(
           body.message,
           modelConfig
@@ -231,13 +231,14 @@ chatRouter.post(
       );
       const mcpServers = await globalSettingService.getMcpServersConfig();
 
-      const { mcpClientManager: mcpManager, tools } =
+      const { mcpClientManager: mcpManager, tools: mcpTools } =
         await mcpToolService.initializeMcpConnection(
           mcpServers,
           body.enabledTools
         );
       mcpClientManager = mcpManager;
 
+      const tools = [...mcpTools];
       const chatClient = createChatClient(modelConfig, tools);
 
       if (originalMessage.parent_message_id) {
@@ -404,6 +405,7 @@ interface GetMessagesRequest {
 interface GetMessagesResponse {
   messages: ThreadMessage[];
   title: string;
+  pinned: boolean;
 }
 
 chatRouter.get(
@@ -425,7 +427,7 @@ chatRouter.get(
           thread.current_leaf_message_id
         );
 
-        res.json({ messages, title: thread.title });
+        res.json({ messages, title: thread.title, pinned: thread.pinned });
       } catch (err) {
         if (err instanceof ThreadNotFoundError) {
           throw new HttpError(StatusCodes.NOT_FOUND, err.message);
@@ -495,6 +497,7 @@ interface SwitchBranchRequest {
 interface SwitchBranchResponse {
   messages: ThreadMessage[];
   title: string;
+  pinned: boolean;
 }
 
 chatRouter.post(
@@ -518,7 +521,7 @@ chatRouter.post(
           targetSiblingId
         );
 
-        res.json({ messages, title: thread.title });
+        res.json({ messages, title: thread.title, pinned: thread.pinned });
       } catch (err) {
         if (err instanceof ThreadNotFoundError) {
           throw new HttpError(StatusCodes.NOT_FOUND, err.message);

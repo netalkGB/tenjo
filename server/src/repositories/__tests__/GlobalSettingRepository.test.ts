@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { GlobalSettingRepository } from '../GlobalSettingRepository';
+import type { GlobalSettings } from '../GlobalSettingRepository';
 import { UserRepository } from '../UserRepository';
 import { TestDatabaseHelper, getTestDbConfig } from '../../test-utils/testDb';
 
@@ -50,43 +51,36 @@ describe('GlobalSettingRepository (Integration Tests)', () => {
     testUserId2 = user2.id;
   });
 
-  describe('get', () => {
-    it('should return undefined when no settings exist', async () => {
-      const result = await globalSettingRepository.get();
-      expect(result).toBeUndefined();
+  describe('getSettings', () => {
+    it('should return empty object when no settings exist', async () => {
+      const result = await globalSettingRepository.getSettings();
+      expect(result).toEqual({});
     });
 
     it('should return settings when they exist', async () => {
-      await globalSettingRepository.getOrCreate();
+      await globalSettingRepository.getOrCreateSettings();
 
-      const result = await globalSettingRepository.get();
-
-      expect(result).toBeDefined();
-      expect(result?.id).toBeDefined();
-      expect(result?.settings).toEqual({});
+      const result = await globalSettingRepository.getSettings();
+      expect(result).toEqual({});
     });
   });
 
-  describe('getOrCreate', () => {
+  describe('getOrCreateSettings', () => {
     it('should create new settings when none exist', async () => {
-      const result = await globalSettingRepository.getOrCreate();
-
-      expect(result).toBeDefined();
-      expect(result.id).toBeDefined();
-      expect(result.settings).toEqual({});
+      const result = await globalSettingRepository.getOrCreateSettings();
+      expect(result).toEqual({});
     });
 
     it('should return existing settings without creating a new one', async () => {
-      const first = await globalSettingRepository.getOrCreate();
-      const second = await globalSettingRepository.getOrCreate();
-
-      expect(first.id).toBe(second.id);
+      const first = await globalSettingRepository.getOrCreateSettings();
+      const second = await globalSettingRepository.getOrCreateSettings();
+      expect(first).toEqual(second);
     });
   });
 
   describe('updateSettings', () => {
     it('should create settings if none exist and update them', async () => {
-      const modelSettings = {
+      const modelSettings: GlobalSettings = {
         model: {
           activeId: 'model-1',
           models: [
@@ -94,34 +88,28 @@ describe('GlobalSettingRepository (Integration Tests)', () => {
               id: 'model-1',
               type: 'lmstudio',
               baseUrl: 'http://localhost:1234/',
-              model: 'test-model',
-              token: ''
+              model: 'test-model'
             }
           ]
         }
       };
 
-      const result = await globalSettingRepository.updateSettings(
-        modelSettings,
-        testUserId
-      );
+      await globalSettingRepository.updateSettings(modelSettings, testUserId);
 
-      expect(result).toBeDefined();
-      expect(result.settings).toEqual(modelSettings);
-      expect(result.updated_by).toBe(testUserId);
+      const result = await globalSettingRepository.getSettings();
+      expect(result).toEqual(modelSettings);
     });
 
     it('should update existing settings', async () => {
-      await globalSettingRepository.getOrCreate();
+      await globalSettingRepository.getOrCreateSettings();
 
-      const newSettings = { model: { activeId: 'new-model', models: [] } };
-      const result = await globalSettingRepository.updateSettings(
-        newSettings,
-        testUserId
-      );
+      const newSettings: GlobalSettings = {
+        model: { activeId: 'new-model', models: [] }
+      };
+      await globalSettingRepository.updateSettings(newSettings, testUserId);
 
-      expect(result.settings).toEqual(newSettings);
-      expect(result.updated_by).toBe(testUserId);
+      const result = await globalSettingRepository.getSettings();
+      expect(result).toEqual(newSettings);
     });
 
     it('should overwrite previous settings completely', async () => {
@@ -130,13 +118,13 @@ describe('GlobalSettingRepository (Integration Tests)', () => {
         testUserId
       );
 
-      const result = await globalSettingRepository.updateSettings(
+      await globalSettingRepository.updateSettings(
         { mcpServers: {} },
         testUserId2
       );
 
-      expect(result.settings).toEqual({ mcpServers: {} });
-      expect(result.updated_by).toBe(testUserId2);
+      const result = await globalSettingRepository.getSettings();
+      expect(result).toEqual({ mcpServers: {} });
     });
   });
 });

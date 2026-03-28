@@ -34,7 +34,9 @@ export const ModelSchema = z.object({
   id: z.string(),
   type: z.string(),
   baseUrl: z.string(),
-  model: z.string()
+  model: z.string(),
+  hasToken: z.boolean(),
+  maxContextLength: z.number().optional()
 });
 
 export const GetModelsResponseSchema = z.object({
@@ -107,10 +109,13 @@ export type GetUsersResponse = z.infer<typeof GetUsersResponseSchema>;
 
 // Tool Approval Rules
 
+export const ApproveStateSchema = z.enum(['auto_approve', 'manual', 'banned']);
+export type ApproveState = z.infer<typeof ApproveStateSchema>;
+
 export const ToolApprovalRuleSchema = z.object({
   id: z.string(),
   toolName: z.string(),
-  autoApprove: z.boolean()
+  approve: ApproveStateSchema
 });
 
 export const GetToolApprovalRulesResponseSchema = z.object({
@@ -124,12 +129,12 @@ export type GetToolApprovalRulesResponse = z.infer<
 
 export interface UpsertToolApprovalRuleRequest {
   toolName: string;
-  autoApprove: boolean;
+  approve: ApproveState;
 }
 
 export interface BulkUpdateToolApprovalRulesRequest {
   toolNames: string[];
-  autoApprove: boolean;
+  approve: ApproveState;
 }
 
 // MCP Servers
@@ -147,9 +152,22 @@ export const HttpMcpServerConfigSchema = z.object({
   headers: z.record(z.string(), z.string()).optional()
 });
 
+export const OAuthHttpMcpServerConfigSchema = z.object({
+  type: z.literal('oauth-http'),
+  url: z.string(),
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  authorized: z.boolean().optional()
+});
+
+export type OAuthHttpMcpServerConfig = z.infer<
+  typeof OAuthHttpMcpServerConfigSchema
+>;
+
 export const McpServerConfigSchema = z.discriminatedUnion('type', [
   StdioMcpServerConfigSchema,
-  HttpMcpServerConfigSchema
+  HttpMcpServerConfigSchema,
+  OAuthHttpMcpServerConfigSchema
 ]);
 
 export const McpServersConfigSchema = z.record(
@@ -163,13 +181,15 @@ export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 export type McpServersConfig = z.infer<typeof McpServersConfigSchema>;
 
 export const GetMcpServersResponseSchema = z.object({
-  mcpServers: McpServersConfigSchema
+  mcpServers: McpServersConfigSchema,
+  oauthCallbackUrl: z.string()
 });
 
 export type GetMcpServersResponse = z.infer<typeof GetMcpServersResponseSchema>;
 
 export const GetMcpToolsResponseSchema = z.object({
-  tools: z.record(z.string(), z.array(z.string()))
+  tools: z.record(z.string(), z.array(z.string())),
+  errors: z.record(z.string(), z.string()).optional()
 });
 
 export type GetMcpToolsResponse = z.infer<typeof GetMcpToolsResponseSchema>;
@@ -182,3 +202,19 @@ export const UpdateMcpServersResponseSchema = z.object({
 export type UpdateMcpServersResponse = z.infer<
   typeof UpdateMcpServersResponseSchema
 >;
+
+// User Preferences
+
+export const UserPreferencesResponseSchema = z.object({
+  language: z.string().optional(),
+  theme: z.string().optional()
+});
+
+export type UserPreferencesResponse = z.infer<
+  typeof UserPreferencesResponseSchema
+>;
+
+export interface UpdatePreferencesRequest {
+  language?: string;
+  theme?: string;
+}

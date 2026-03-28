@@ -28,6 +28,8 @@ DATABASE_SCHEMA=tenjo
 SESSION_SECRET=your-secret-key-here
 LISTEN_HOST=127.0.0.1
 LISTEN_PORT=3000
+ENCRYPTION_KEY=your-encryption-key-here
+BASE_URL=https://chat.example.com
 ```
 
 | 変数 | 説明 |
@@ -38,6 +40,9 @@ LISTEN_PORT=3000
 | `LISTEN_HOST` | バインドするホストアドレス |
 | `LISTEN_PORT` | 待ち受けるポート番号 |
 | `DATA_DIR` | データディレクトリのパス（デフォルト: サーバー実行ディレクトリ直下の `files/`） |
+| `SINGLE_USER_MODE` | `true` に設定するとシングルユーザーモードで動作 |
+| `ENCRYPTION_KEY` | DBに保存される認証情報（APIキー、OAuthトークン等）の暗号化キー |
+| `BASE_URL` | アプリケーションの公開ベースURL（例: `https://chat.example.com`） |
 
 ### 3. ビルドと起動
 

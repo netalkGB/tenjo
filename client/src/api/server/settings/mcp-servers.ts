@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { z } from 'zod';
 import { ApiError } from '../../errors/ApiError';
 import { handleApiError } from '../../errors/handleApiError';
 import {
@@ -47,6 +48,39 @@ export async function updateMcpServers(
         error.response?.status || null
       );
     }
+    handleApiError(error);
+  }
+}
+
+// OAuth MCP
+
+export interface StartOAuthRequest {
+  serverName: string;
+  url: string;
+  clientId?: string;
+  clientSecret?: string;
+}
+
+export interface StartOAuthResponse {
+  authorizationUrl: string;
+  stateId: string;
+}
+
+const StartOAuthResponseSchema = z.object({
+  authorizationUrl: z.string(),
+  stateId: z.string()
+});
+
+export async function startMcpOAuth(
+  params: StartOAuthRequest
+): Promise<StartOAuthResponse> {
+  try {
+    const response = await axios.post(
+      '/api/settings/mcp-oauth/authorize',
+      params
+    );
+    return StartOAuthResponseSchema.parse(response.data);
+  } catch (error) {
     handleApiError(error);
   }
 }

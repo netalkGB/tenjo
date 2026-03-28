@@ -104,5 +104,45 @@ export const migrations: Migration[] = [
     version: 3,
     name: 'add_provider_to_messages',
     up: `ALTER TABLE "messages" ADD COLUMN "provider" varchar(50);`
+  },
+  {
+    version: 4,
+    name: '!test skip!_create_extension_pgcrypto',
+    up: `CREATE EXTENSION IF NOT EXISTS pgcrypto;`
+  },
+  {
+    version: 5,
+    name: 'add_credential_store',
+    up: `
+      CREATE TABLE "credential_store" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "value" bytea NOT NULL,
+        "created_at" timestamp DEFAULT now(),
+        "updated_at" timestamp DEFAULT now()
+      );
+    `
+  },
+  {
+    version: 6,
+    name: 'replace_auto_approve_with_approve',
+    up: `
+      DELETE FROM "tool_approval_rules";
+      ALTER TABLE "tool_approval_rules" ADD COLUMN "approve" varchar(20) DEFAULT 'manual' NOT NULL;
+      ALTER TABLE "tool_approval_rules" DROP COLUMN "auto_approve";
+    `
+  },
+  {
+    version: 7,
+    name: 'add_pending_oauth_flows',
+    up: `
+      CREATE TABLE IF NOT EXISTS "pending_oauth_flows" (
+        "state_id" uuid PRIMARY KEY,
+        "credential_id" uuid NOT NULL REFERENCES "credential_store"("id") ON DELETE CASCADE,
+        "user_id" uuid NOT NULL,
+        "created_at" timestamp DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS "pending_oauth_flows_created_at_idx" ON "pending_oauth_flows" USING btree ("created_at");
+    `
   }
 ];

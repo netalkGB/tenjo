@@ -4,9 +4,11 @@ import type {
   GlobalSettings,
   ModelSettings,
   ModelEntry,
+  ModelEntryResponse,
   ModelConfig
 } from '../repositories/GlobalSettingRepository';
-import type { McpServersConfig } from '../utils/mcpTransportFactory';
+import type { CredentialStoreService } from './CredentialStoreService';
+import type { McpServersConfig } from 'tenjo-chat-engine';
 import { ServiceError } from '../errors/ServiceError';
 
 export class ModelNotFoundError extends ServiceError {
@@ -18,11 +20,13 @@ export class ModelNotFoundError extends ServiceError {
 export class ModelDuplicateError extends ServiceError {}
 
 export class GlobalSettingService {
-  constructor(private globalSettingRepo: GlobalSettingRepository) {}
+  constructor(
+    private globalSettingRepo: GlobalSettingRepository,
+    private credentialStoreService: CredentialStoreService
+  ) {}
 
   async getGlobalSettings(): Promise<GlobalSettings> {
-    const globalSetting = await this.globalSettingRepo.get();
-    return (globalSetting?.settings ?? {}) as GlobalSettings;
+    return this.globalSettingRepo.getSettings();
   }
 
   async getModelSettings(): Promise<ModelSettings> {
@@ -48,11 +52,33 @@ export class GlobalSettingService {
       throw new ModelNotFoundError();
     }
 
+    const token = entry.tokenCredentialId
+      ? await this.credentialStoreService.load(entry.tokenCredentialId)
+      : null;
+
     return {
       type: entry.type,
       baseUrl: entry.baseUrl,
       model: entry.model,
-      token: entry.token || null
+      token
+    };
+  }
+
+  async getModelSettingsForClient(): Promise<{
+    activeId: string;
+    models: ModelEntryResponse[];
+  }> {
+    const modelSettings = await this.getModelSettings();
+    return {
+      activeId: modelSettings.activeId,
+      models: modelSettings.models.map((m) => ({
+        id: m.id,
+        type: m.type,
+        baseUrl: m.baseUrl,
+        model: m.model,
+        hasToken: !!m.tokenCredentialId,
+        maxContextLength: m.maxContextLength
+      }))
     };
   }
 
@@ -62,12 +88,20 @@ export class GlobalSettingService {
   }
 
   async addModel(
-    entry: Omit<ModelEntry, 'id'>,
+    entry: {
+      type: ModelEntry['type'];
+      baseUrl: string;
+      model: string;
+      token?: string;
+      maxContextLength?: number;
+    },
     userId: string
-  ): Promise<ModelEntry> {
-    const globalSetting = await this.globalSettingRepo.getOrCreate();
-    const settings = (globalSetting.settings ?? {}) as GlobalSettings;
-    const modelSettings = settings.model ?? { activeId: '', models: [] };
+  ): Promise<ModelEntryResponse> {
+    const settings = await this.globalSettingRepo.getOrCreateSettings();
+    const modelSettings: ModelSettings = settings.model ?? {
+      activeId: '',
+      models: []
+    };
 
     const duplicate = modelSettings.models.some(
       (m) => m.model === entry.model && m.baseUrl === entry.baseUrl
@@ -78,28 +112,49 @@ export class GlobalSettingService {
       );
     }
 
+    let tokenCredentialId: string | undefined;
+    if (entry.token) {
+      tokenCredentialId = await this.credentialStoreService.save(entry.token);
+    }
+
     const newEntry: ModelEntry = {
       id: crypto.randomUUID(),
-      ...entry
+      type: entry.type,
+      baseUrl: entry.baseUrl,
+      model: entry.model,
+      tokenCredentialId,
+      maxContextLength: entry.maxContextLength
     };
 
     modelSettings.models.push(newEntry);
-    await this.globalSettingRepo.updateSettings(
-      { ...settings, model: modelSettings },
-      userId
-    );
+    const updated: GlobalSettings = { ...settings, model: modelSettings };
+    await this.globalSettingRepo.updateSettings(updated, userId);
 
-    return newEntry;
+    return {
+      id: newEntry.id,
+      type: newEntry.type,
+      baseUrl: newEntry.baseUrl,
+      model: newEntry.model,
+      hasToken: !!tokenCredentialId,
+      maxContextLength: newEntry.maxContextLength
+    };
   }
 
   async deleteModel(modelId: string, userId: string): Promise<void> {
-    const globalSetting = await this.globalSettingRepo.getOrCreate();
-    const settings = (globalSetting.settings ?? {}) as GlobalSettings;
-    const modelSettings = settings.model ?? { activeId: '', models: [] };
+    const settings = await this.globalSettingRepo.getOrCreateSettings();
+    const modelSettings: ModelSettings = settings.model ?? {
+      activeId: '',
+      models: []
+    };
 
     const index = modelSettings.models.findIndex((m) => m.id === modelId);
     if (index === -1) {
       throw new ModelNotFoundError();
+    }
+
+    const entry = modelSettings.models[index];
+    if (entry.tokenCredentialId) {
+      await this.credentialStoreService.delete(entry.tokenCredentialId);
     }
 
     modelSettings.models.splice(index, 1);
@@ -108,19 +163,16 @@ export class GlobalSettingService {
       modelSettings.activeId = '';
     }
 
-    await this.globalSettingRepo.updateSettings(
-      { ...settings, model: modelSettings },
-      userId
-    );
+    const updated: GlobalSettings = { ...settings, model: modelSettings };
+    await this.globalSettingRepo.updateSettings(updated, userId);
   }
 
   async updateMcpServersConfig(
     mcpServers: McpServersConfig,
     userId: string
   ): Promise<void> {
-    const globalSetting = await this.globalSettingRepo.getOrCreate();
-    const settings = (globalSetting.settings ?? {}) as GlobalSettings;
-    settings.mcpServers = mcpServers;
-    await this.globalSettingRepo.updateSettings(settings, userId);
+    const settings = await this.globalSettingRepo.getOrCreateSettings();
+    const updated: GlobalSettings = { ...settings, mcpServers };
+    await this.globalSettingRepo.updateSettings(updated, userId);
   }
 }

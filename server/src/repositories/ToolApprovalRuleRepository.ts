@@ -1,10 +1,12 @@
 import { BaseRepository } from './BaseRepository';
 
+export type ApproveState = 'auto_approve' | 'manual' | 'banned';
+
 export interface ToolApprovalRule {
   id: string;
   user_id: string;
   tool_name: string;
-  auto_approve: boolean;
+  approve: ApproveState;
   created_at: Date | null;
   updated_at: Date | null;
 }
@@ -13,7 +15,7 @@ export interface InsertToolApprovalRule {
   id?: string;
   user_id: string;
   tool_name: string;
-  auto_approve?: boolean;
+  approve?: ApproveState;
   created_at?: Date | null;
   updated_at?: Date | null;
 }
@@ -24,7 +26,7 @@ const COLUMNS = [
   'id',
   'user_id',
   'tool_name',
-  'auto_approve',
+  'approve',
   'created_at',
   'updated_at'
 ] as const;
@@ -60,21 +62,21 @@ export class ToolApprovalRuleRepository extends BaseRepository {
   async upsert(
     userId: string,
     toolName: string,
-    autoApprove: boolean
+    approve: ApproveState
   ): Promise<ToolApprovalRule> {
     const existing = await this.findByUserIdAndToolName(userId, toolName);
 
     if (existing) {
       const result = await this.pool.query(
-        `UPDATE "tool_approval_rules" SET "auto_approve" = $1, "updated_at" = $2 WHERE "id" = $3 RETURNING *`,
-        [autoApprove, new Date(), existing.id]
+        `UPDATE "tool_approval_rules" SET "approve" = $1, "updated_at" = $2 WHERE "id" = $3 RETURNING *`,
+        [approve, new Date(), existing.id]
       );
       return result.rows[0] as ToolApprovalRule;
     }
     return await this.create({
       user_id: userId,
       tool_name: toolName,
-      auto_approve: autoApprove
+      approve
     });
   }
 
@@ -107,7 +109,6 @@ export class ToolApprovalRuleRepository extends BaseRepository {
         [userId]
       );
     } else {
-      // Build parameterized IN clause
       const placeholders = activeToolNames
         .map((_, i) => `$${i + 2}`)
         .join(', ');
@@ -121,13 +122,13 @@ export class ToolApprovalRuleRepository extends BaseRepository {
   async bulkUpsert(
     userId: string,
     toolNames: string[],
-    autoApprove: boolean
+    approve: ApproveState
   ): Promise<ToolApprovalRule[]> {
     if (toolNames.length === 0) return [];
 
     const results: ToolApprovalRule[] = [];
     for (const toolName of toolNames) {
-      const rule = await this.upsert(userId, toolName, autoApprove);
+      const rule = await this.upsert(userId, toolName, approve);
       results.push(rule);
     }
     return results;
@@ -148,6 +149,6 @@ export class ToolApprovalRuleRepository extends BaseRepository {
 
   async shouldAutoApprove(userId: string, toolName: string): Promise<boolean> {
     const rule = await this.findByUserIdAndToolName(userId, toolName);
-    return rule?.auto_approve ?? false;
+    return rule?.approve === 'auto_approve';
   }
 }

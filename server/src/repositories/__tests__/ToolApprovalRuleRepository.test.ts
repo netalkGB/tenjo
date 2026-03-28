@@ -46,26 +46,26 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       const rule = await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'file_read',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       expect(rule).toBeDefined();
       expect(rule.id).toBeDefined();
       expect(rule.user_id).toBe(testUserId);
       expect(rule.tool_name).toBe('file_read');
-      expect(rule.auto_approve).toBe(true);
+      expect(rule.approve).toBe('auto_approve');
     });
 
     it('should auto-generate unique ids', async () => {
       const rule1 = await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       const rule2 = await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_b',
-        auto_approve: false
+        approve: 'manual'
       });
 
       expect(rule1.id).not.toBe(rule2.id);
@@ -82,12 +82,12 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_b',
-        auto_approve: false
+        approve: 'manual'
       });
 
       const rules = await toolApprovalRuleRepository.findByUserId(testUserId);
@@ -105,12 +105,12 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: otherUser.id,
         tool_name: 'tool_b',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       const rules = await toolApprovalRuleRepository.findByUserId(testUserId);
@@ -132,7 +132,7 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'file_read',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       const result = await toolApprovalRuleRepository.findByUserIdAndToolName(
@@ -142,7 +142,7 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
 
       expect(result).toBeDefined();
       expect(result?.tool_name).toBe('file_read');
-      expect(result?.auto_approve).toBe(true);
+      expect(result?.approve).toBe('auto_approve');
     });
   });
 
@@ -151,29 +151,29 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       const rule = await toolApprovalRuleRepository.upsert(
         testUserId,
         'file_write',
-        true
+        'auto_approve'
       );
 
       expect(rule).toBeDefined();
       expect(rule.user_id).toBe(testUserId);
       expect(rule.tool_name).toBe('file_write');
-      expect(rule.auto_approve).toBe(true);
+      expect(rule.approve).toBe('auto_approve');
     });
 
     it('should update an existing rule', async () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'file_write',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       const updated = await toolApprovalRuleRepository.upsert(
         testUserId,
         'file_write',
-        false
+        'banned'
       );
 
-      expect(updated.auto_approve).toBe(false);
+      expect(updated.approve).toBe('banned');
 
       // Verify only one rule exists
       const rules = await toolApprovalRuleRepository.findByUserId(testUserId);
@@ -193,7 +193,7 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       const rule = await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       const result = await toolApprovalRuleRepository.delete(rule.id);
@@ -220,12 +220,12 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_b',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       const result = await toolApprovalRuleRepository.deleteByUserIdAndToolName(
@@ -245,12 +245,12 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_b',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       await toolApprovalRuleRepository.deleteStaleRules(testUserId, []);
@@ -263,17 +263,17 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_b',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_c',
-        auto_approve: false
+        approve: 'manual'
       });
 
       await toolApprovalRuleRepository.deleteStaleRules(testUserId, [
@@ -298,12 +298,12 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
       await toolApprovalRuleRepository.create({
         user_id: otherUser.id,
         tool_name: 'tool_a',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       await toolApprovalRuleRepository.deleteStaleRules(testUserId, []);
@@ -327,11 +327,11 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       expect(result).toBe(false);
     });
 
-    it('should return true when rule has auto_approve set to true', async () => {
+    it('should return true when rule has approve set to auto_approve', async () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'file_read',
-        auto_approve: true
+        approve: 'auto_approve'
       });
 
       const result = await toolApprovalRuleRepository.shouldAutoApprove(
@@ -341,16 +341,30 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       expect(result).toBe(true);
     });
 
-    it('should return false when rule has auto_approve set to false', async () => {
+    it('should return false when rule has approve set to manual', async () => {
       await toolApprovalRuleRepository.create({
         user_id: testUserId,
         tool_name: 'file_write',
-        auto_approve: false
+        approve: 'manual'
       });
 
       const result = await toolApprovalRuleRepository.shouldAutoApprove(
         testUserId,
         'file_write'
+      );
+      expect(result).toBe(false);
+    });
+
+    it('should return false when rule has approve set to banned', async () => {
+      await toolApprovalRuleRepository.create({
+        user_id: testUserId,
+        tool_name: 'file_delete',
+        approve: 'banned'
+      });
+
+      const result = await toolApprovalRuleRepository.shouldAutoApprove(
+        testUserId,
+        'file_delete'
       );
       expect(result).toBe(false);
     });

@@ -11,8 +11,13 @@ import {
   getModels,
   setActiveModel as setActiveModelApi,
   getMcpTools,
+  getToolApprovalRules,
+  getPreferences,
+  updatePreferences,
   type Model
 } from '@/api/server/settings';
+import { type LocaleMode, LOCALE_MODES, changeLocale } from '@/i18n/config';
+import { type ThemeMode, THEME_MODES, applyTheme } from '@/lib/themeManager';
 import { useDialog } from '@/hooks/useDialog';
 import { McpToolStorage } from '@/lib/McpToolStorage';
 
@@ -30,6 +35,10 @@ interface SettingsContextValue {
   enableAllTools: () => void;
   disableAllTools: () => void;
   reloadTools: () => Promise<void>;
+  localeMode: LocaleMode;
+  themeMode: ThemeMode;
+  updateLocaleMode: (mode: LocaleMode) => void;
+  updateThemeMode: (mode: ThemeMode) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -45,6 +54,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   >({});
   const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
   const [isToolsLoaded, setIsToolsLoaded] = useState(false);
+  const [localeMode, setLocaleMode] = useState<LocaleMode>('auto');
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('auto');
 
   const reloadModels = async () => {
     try {
@@ -69,11 +80,71 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     reloadModels();
   });
 
+  const prefsInitialized = useRef(false);
+  useEffect(() => {
+    if (prefsInitialized.current) return;
+    prefsInitialized.current = true;
+
+    const loadPreferences = async () => {
+      try {
+        const prefs = await getPreferences();
+
+        if (
+          prefs.language &&
+          LOCALE_MODES.includes(prefs.language as LocaleMode)
+        ) {
+          const mode = prefs.language as LocaleMode;
+          changeLocale(mode);
+          setLocaleMode(mode);
+        }
+
+        if (prefs.theme && THEME_MODES.includes(prefs.theme as ThemeMode)) {
+          const mode = prefs.theme as ThemeMode;
+          applyTheme(mode);
+          setThemeModeState(mode);
+        }
+      } catch {
+        // Preferences are non-critical; fall back to OS/browser defaults
+      }
+    };
+    loadPreferences();
+  });
+
+  // Re-apply theme when OS preference changes (only relevant in auto mode)
+  const themeModeRef = useRef(themeMode);
+  themeModeRef.current = themeMode;
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => {
+      if (themeModeRef.current === 'auto') {
+        applyTheme('auto');
+      }
+    };
+    query.addEventListener('change', handler);
+    return () => query.removeEventListener('change', handler);
+  }, []);
+
   const reloadTools = async () => {
     try {
-      const res = await getMcpTools();
-      setAvailableToolsByServer(res.tools);
-      const allTools = Object.values(res.tools).flat();
+      const [res, rulesRes] = await Promise.all([
+        getMcpTools(),
+        getToolApprovalRules()
+      ]);
+
+      // Filter out banned tools
+      const bannedSet = new Set(
+        rulesRes.rules.filter(r => r.approve === 'banned').map(r => r.toolName)
+      );
+      const filteredTools: Record<string, string[]> = {};
+      for (const [server, tools] of Object.entries(res.tools)) {
+        const filtered = tools.filter(t => !bannedSet.has(t));
+        if (filtered.length > 0) {
+          filteredTools[server] = filtered;
+        }
+      }
+
+      setAvailableToolsByServer(filteredTools);
+      const allTools = Object.values(filteredTools).flat();
 
       const disabledSet = McpToolStorage.load(allTools);
       if (disabledSet) {
@@ -149,6 +220,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     persistDisabledTools(new Set(), availableToolsByServer);
   };
 
+  const updateLocaleMode = (mode: LocaleMode) => {
+    changeLocale(mode);
+    setLocaleMode(mode);
+    updatePreferences({ language: mode }).catch(() => {
+      openDialog({
+        title: t('error'),
+        description: t('error_save_preferences'),
+        type: 'ok'
+      });
+    });
+  };
+
+  const updateThemeMode = (mode: ThemeMode) => {
+    applyTheme(mode);
+    setThemeModeState(mode);
+    updatePreferences({ theme: mode }).catch(() => {
+      openDialog({
+        title: t('error'),
+        description: t('error_save_preferences'),
+        type: 'ok'
+      });
+    });
+  };
+
   const setActiveModelId = (id: string) => {
     setActiveModelIdState(id);
     setActiveModelApi(id).catch(() => {
@@ -175,7 +270,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         toggleServerTools,
         enableAllTools,
         disableAllTools,
-        reloadTools
+        reloadTools,
+        localeMode,
+        themeMode,
+        updateLocaleMode,
+        updateThemeMode
       }}
     >
       {children}

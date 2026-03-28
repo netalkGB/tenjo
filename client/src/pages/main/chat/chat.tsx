@@ -2,9 +2,11 @@ import {
   ChatInput,
   UserMessageSection,
   AssistantMessageSection,
-  LoadingIndicator,
-  ChatSkeleton
+  ChatSkeleton,
+  ChatTitleHeader,
+  ChatStatusLine
 } from '@/components/chat';
+import type { ChatStatus } from '@/components/chat';
 import { useLocation, useLoaderData } from 'react-router';
 import { MainLayout } from '../layout';
 import { Suspense, useEffect, useReducer, useState, useRef, use } from 'react';
@@ -50,7 +52,11 @@ interface ChatContentProps {
 }
 
 function ChatContent({ threadId, dataPromise }: ChatContentProps) {
-  const { messages: initialMessages, title: initialTitle } = use(dataPromise);
+  const {
+    messages: initialMessages,
+    title: initialTitle,
+    pinned: initialPinned
+  } = use(dataPromise);
   const location = useLocation();
   const { reload } = useHistory();
   const { activeModelId, enabledTools } = useSettings();
@@ -58,8 +64,10 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   const { t } = useTranslation();
   const [{ messages }, dispatch] = useReducer(chatReducer, initialChatState);
   const [chatTitle, setChatTitle] = useState<string>(initialTitle);
+  const [chatPinned, setChatPinned] = useState<boolean>(initialPinned);
   const hasProcessedInitialMessage = useRef(false);
   const [first, setFirst] = useState<boolean>(true);
+  const [chatStatus, setChatStatus] = useState<ChatStatus>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -68,6 +76,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   function handleStopStreaming() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    setChatStatus(null);
     dispatch({ type: ChatActionType.STOP_STREAMING });
   }
 
@@ -78,13 +87,14 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
       payload: convertThreadMessages(initialMessages)
     });
     setChatTitle(initialTitle);
+    setChatPinned(initialPinned);
     hasProcessedInitialMessage.current = false;
 
     // Scroll to the top when the thread changes.
     setTimeout(() => {
       virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'auto' });
     }, 100);
-  }, [initialMessages, initialTitle]);
+  }, [initialMessages, initialTitle, initialPinned]);
 
   // Function to update branch info (only for specified message IDs).
   async function updateBranchStatusForMessages(
@@ -173,12 +183,16 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
 
     if (hasContent && !hasProcessedInitialMessage.current && !isAlreadySent) {
       hasProcessedInitialMessage.current = true;
+      // Clear location.state so a page reload stops instead of re-sending.
+      // Use window.history.replaceState to avoid triggering React Router navigation and loader re-runs.
+      window.history.replaceState({}, '', location.pathname);
       handlerRef.current(msg ?? '', imgUrls);
     }
   }, [
     first,
     location.state?.initialMessage,
     location.state?.initialImageUrls,
+    location.pathname,
     initialMessages
   ]);
 
@@ -220,6 +234,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     const editedMessage_parentId =
       messages[editedMessageIndex]?.parentMessageId;
 
+    setChatStatus('processing');
     dispatch({
       type: ChatActionType.REPLACE_OPTIMISTIC_EDIT,
       payload: {
@@ -248,22 +263,28 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         {
           signal: abortController.signal,
           onChunk: (chunk: string) => {
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.APPEND_CHUNK,
               payload: { chunk }
             });
           },
           onThinking: (chunk: string) => {
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.APPEND_THINKING_CHUNK,
               payload: { chunk }
             });
           },
           onReasoning: (chunk: string) => {
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.APPEND_THINKING_CHUNK,
               payload: { chunk }
             });
+          },
+          onProcessing: () => {
+            setChatStatus('processing');
           },
           onComplete: (
             _title?: string,
@@ -273,6 +294,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
             provider?: string
           ) => {
             abortControllerRef.current = null;
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.COMPLETE_STREAMING,
               payload: { userMessageId, assistantMessageId, model, provider }
@@ -288,6 +310,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
             }, 0);
           },
           onToolCall: (event: ToolCallEvent) => {
+            setChatStatus(event.type === 'calling' ? 'toolExecuting' : null);
             handleToolCallEvent(event);
           }
         },
@@ -308,9 +331,10 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         }
         return;
       }
+      const detail = error instanceof Error ? error.message : undefined;
       openDialog({
         title: t('error'),
-        description: t('error_edit_message'),
+        description: detail || t('error_edit_message'),
         type: 'ok'
       });
       // On error, revert messages from the edited message onward.
@@ -320,6 +344,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
       });
     } finally {
       abortControllerRef.current = null;
+      setChatStatus(null);
     }
   }
 
@@ -351,7 +376,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   async function handleToolAutoApprove(toolCallId: string, toolName: string) {
     // Register an auto-approval rule, then approve.
     try {
-      await upsertToolApprovalRule({ toolName, autoApprove: true });
+      await upsertToolApprovalRule({ toolName, approve: 'auto_approve' });
       await handleToolApproval(toolCallId, true);
     } catch {
       openDialog({
@@ -371,6 +396,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     const lastMessageId = lastCompletedMessage?.id;
 
     // Add a new user message and a streaming assistant message.
+    setChatStatus('processing');
     dispatch({
       type: ChatActionType.APPEND_OPTIMISTIC_SEND,
       payload: {
@@ -399,22 +425,31 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         {
           signal: abortController.signal,
           onChunk: (chunk: string) => {
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.APPEND_CHUNK,
               payload: { chunk }
             });
           },
           onThinking: (chunk: string) => {
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.APPEND_THINKING_CHUNK,
               payload: { chunk }
             });
           },
           onReasoning: (chunk: string) => {
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.APPEND_THINKING_CHUNK,
               payload: { chunk }
             });
+          },
+          onProcessing: () => {
+            setChatStatus('processing');
+          },
+          onGeneratingTitle: () => {
+            setChatStatus('generatingTitle');
           },
           onComplete: (
             title?: string,
@@ -424,6 +459,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
             provider?: string
           ) => {
             abortControllerRef.current = null;
+            setChatStatus(null);
             dispatch({
               type: ChatActionType.COMPLETE_STREAMING,
               payload: { userMessageId, assistantMessageId, model, provider }
@@ -435,6 +471,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
             }
           },
           onToolCall: (event: ToolCallEvent) => {
+            setChatStatus(event.type === 'calling' ? 'toolExecuting' : null);
             handleToolCallEvent(event);
           }
         },
@@ -456,15 +493,17 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         }
         return;
       }
+      const detail = error instanceof Error ? error.message : undefined;
       openDialog({
         title: t('error'),
-        description: t('error_send_message'),
+        description: detail || t('error_send_message'),
         type: 'ok'
       });
       // On error, remove the last two messages (user and assistant).
       dispatch({ type: ChatActionType.REVERT_SEND });
     } finally {
       abortControllerRef.current = null;
+      setChatStatus(null);
     }
   }
 
@@ -472,7 +511,12 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     <MainLayout
       header={
         chatTitle ? (
-          <span className="text-sm">{chatTitle}</span>
+          <ChatTitleHeader
+            threadId={threadId}
+            title={chatTitle}
+            pinned={chatPinned}
+            onTitleChange={setChatTitle}
+          />
         ) : (
           <Skeleton className="h-5 w-54" />
         )
@@ -483,7 +527,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           style={{ height: '100%' }}
           data={messages}
           followOutput="smooth"
-          itemContent={(_index, message) => (
+          itemContent={(index, message) => (
             <div className="p-6 w-[85%] mx-auto">
               {message.type === 'user' ? (
                 <UserMessageSection
@@ -515,11 +559,6 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                 />
               ) : (
                 <>
-                  {message.isStreaming &&
-                    !message.content &&
-                    !message.thinkingContent &&
-                    !message.toolCalls?.length && <LoadingIndicator />}
-
                   {(() => {
                     const hasContent = !!message.content;
                     const hasThinking = !!message.thinkingContent;
@@ -541,6 +580,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                         currentCount={parentMessage?.currentCount ?? 1}
                         totalCount={parentMessage?.totalCount ?? 1}
                         isStreaming={isStreaming || message.isStreaming}
+                        contentParts={message.contentParts}
                         toolCalls={message.toolCalls?.map(tc =>
                           tc.status === 'pendingApproval'
                             ? {
@@ -575,6 +615,9 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                       />
                     );
                   })()}
+                  {index === messages.length - 1 && chatStatus && (
+                    <ChatStatusLine status={chatStatus} />
+                  )}
                 </>
               )}
             </div>

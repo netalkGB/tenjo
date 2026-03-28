@@ -26,7 +26,12 @@ const host = process.env.LISTEN_HOST || '0.0.0.0';
 const port = parseInt(process.env.LISTEN_PORT || '3000', 10);
 
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, '../.views'));
+app.set('views', [
+  // .views: generated from client build (overwritten on each build)
+  path.join(__dirname, '../.views'),
+  // views: server-owned templates (e.g. OAuth callback) that persist across builds
+  path.join(__dirname, '../views')
+]);
 app.use('/assets', express.static(path.join(__dirname, '../.static')));
 app.use(express.static(path.join(__dirname, '../.public')));
 
@@ -103,3 +108,9 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export { app };
+// Exported for Electron main process to call OAuth callback directly (bypassing HTTP)
+export { mcpOAuthService } from './services/registry';
+export type {
+  OAuthCallbackParams,
+  OAuthCallbackResult
+} from './services/McpOAuthService';

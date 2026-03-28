@@ -52,7 +52,14 @@ export class TestDatabaseHelper {
     if (!this.pool) {
       throw new Error('Database not connected. Call connect() first.');
     }
-    await runAllMigrations(this.pool);
+    // Create extensions before migrations. Extensions are database-level objects,
+    // so concurrent CREATE EXTENSION in parallel tests causes race conditions.
+    try {
+      await this.pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    } catch (err) {
+      if ((err as { code?: string }).code !== '23505') throw err;
+    }
+    await runAllMigrations(this.pool, { isTest: true });
   }
 
   async cleanTables(): Promise<void> {

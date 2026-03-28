@@ -28,6 +28,8 @@ DATABASE_SCHEMA=tenjo
 SESSION_SECRET=your-secret-key-here
 LISTEN_HOST=127.0.0.1
 LISTEN_PORT=3000
+ENCRYPTION_KEY=your-encryption-key-here
+BASE_URL=https://chat.example.com
 ```
 
 | Variable | Description |
@@ -38,6 +40,9 @@ LISTEN_PORT=3000
 | `LISTEN_HOST` | Host address to bind to |
 | `LISTEN_PORT` | Port number to listen on |
 | `DATA_DIR` | Data directory path (default: `files/` under the server working directory) |
+| `SINGLE_USER_MODE` | Set to `true` to run in single-user mode |
+| `ENCRYPTION_KEY` | Encryption key for credentials (API keys, OAuth tokens, etc.) stored in the database |
+| `BASE_URL` | Public base URL of the application (e.g. `https://chat.example.com`) |
 
 ### 3. Build and start
 

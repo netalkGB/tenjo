@@ -144,6 +144,12 @@ export function ModelSettings() {
                       {formatProviderLabel(model.type)}
                     </span>
                     {model.baseUrl}
+                    {model.maxContextLength != null && (
+                      <span className="ml-2">
+                        ({t('settings_max_context_length')}:{' '}
+                        {model.maxContextLength.toLocaleString()})
+                      </span>
+                    )}
                   </div>
                 </div>
                 {isAdmin && (

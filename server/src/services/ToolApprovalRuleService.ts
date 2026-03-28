@@ -1,19 +1,22 @@
 import type {
   ToolApprovalRuleRepository,
-  ToolApprovalRule
+  ToolApprovalRule,
+  ApproveState
 } from '../repositories/ToolApprovalRuleRepository';
+
+export type { ApproveState };
 
 export interface ToolApprovalRuleDto {
   id: string;
   toolName: string;
-  autoApprove: boolean;
+  approve: ApproveState;
 }
 
 function toDto(rule: ToolApprovalRule): ToolApprovalRuleDto {
   return {
     id: rule.id,
     toolName: rule.tool_name,
-    autoApprove: rule.auto_approve
+    approve: rule.approve
   };
 }
 
@@ -28,12 +31,12 @@ export class ToolApprovalRuleService {
   async upsert(
     userId: string,
     toolName: string,
-    autoApprove: boolean
+    approve: ApproveState
   ): Promise<ToolApprovalRuleDto> {
     const rule = await this.toolApprovalRuleRepo.upsert(
       userId,
       toolName,
-      autoApprove
+      approve
     );
     return toDto(rule);
   }
@@ -45,19 +48,18 @@ export class ToolApprovalRuleService {
   async bulkUpdate(
     userId: string,
     toolNames: string[],
-    autoApprove: boolean
+    approve: ApproveState
   ): Promise<ToolApprovalRuleDto[]> {
-    if (autoApprove) {
-      const rules = await this.toolApprovalRuleRepo.bulkUpsert(
-        userId,
-        toolNames,
-        true
-      );
-      return rules.map(toDto);
-    } else {
+    if (approve === 'manual') {
       await this.toolApprovalRuleRepo.bulkDeleteByToolNames(userId, toolNames);
       return [];
     }
+    const rules = await this.toolApprovalRuleRepo.bulkUpsert(
+      userId,
+      toolNames,
+      approve
+    );
+    return rules.map(toDto);
   }
 
   async deleteStaleRules(

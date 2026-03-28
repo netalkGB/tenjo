@@ -1,5 +1,5 @@
 import type { ThreadMessage } from '@/api/server/chat';
-import type { Message } from '@/state/chatTypes';
+import type { Message, MessagePart } from '@/state/chatTypes';
 import type { ToolCallInfo } from '@/components/chat';
 
 type ContentArray = (
@@ -62,6 +62,7 @@ export function convertThreadMessages(
 ): Message[] {
   const result: Message[] = [];
   let pendingToolCalls: ToolCallInfo[] = [];
+  let pendingParts: MessagePart[] = [];
   // Track the original user message ID during a tool flow.
   // The parent of assistant(tool_calls) = user message ID
   let toolFlowUserMessageId: string | null = null;
@@ -70,30 +71,30 @@ export function convertThreadMessages(
     const { role, content, tool_calls, tool_call_id } = msg.data;
 
     if (role === 'assistant' && tool_calls && tool_calls.length > 0) {
-      // Assistant message requesting tool calls -> accumulate in pendingToolCalls.
-      // Remember that this assistant's parent is a user message.
-      toolFlowUserMessageId = msg.parent_message_id;
-      pendingToolCalls = tool_calls.map(tc => ({
-        toolCallId: tc.id,
-        toolName: tc.function.name,
-        toolArgs: safeJsonParse(tc.function.arguments) as
-          | Record<string, unknown>
-          | undefined,
-        status: 'calling' as const
-      }));
-      // If this message has content, add it for display (text before the tool call).
+      // Accumulate tool calls across multiple rounds.
+      // Only record the first round's parent as the user message ID.
+      if (!toolFlowUserMessageId) {
+        toolFlowUserMessageId = msg.parent_message_id;
+      }
+
+      // If this message has content, add a text part before tool calls.
       if (content) {
-        result.push({
-          id: msg.id,
-          type: 'assistant',
-          content: extractTextContent(content),
-          currentCount: msg.currentCount,
-          totalCount: msg.totalCount,
-          siblings: msg.siblings ?? undefined,
-          parentMessageId: msg.parent_message_id,
-          model: msg.model,
-          provider: msg.provider
+        const text = extractTextContent(content);
+        if (text) {
+          pendingParts.push({ type: 'text', content: text });
+        }
+      }
+
+      for (const tc of tool_calls) {
+        pendingToolCalls.push({
+          toolCallId: tc.id,
+          toolName: tc.function.name,
+          toolArgs: safeJsonParse(tc.function.arguments) as
+            | Record<string, unknown>
+            | undefined,
+          status: 'calling' as const
         });
+        pendingParts.push({ type: 'toolCall', toolCallId: tc.id });
       }
       continue;
     }
@@ -147,10 +148,16 @@ export function convertThreadMessages(
     // Reset parentMessageId to the user message ID from before the tool flow.
     if (role === 'assistant' && pendingToolCalls.length > 0) {
       message.toolCalls = pendingToolCalls;
+      // Add the final text as a part
+      if (messageText) {
+        pendingParts.push({ type: 'text', content: messageText });
+      }
+      message.contentParts = pendingParts;
       if (toolFlowUserMessageId) {
         message.parentMessageId = toolFlowUserMessageId;
       }
       pendingToolCalls = [];
+      pendingParts = [];
       toolFlowUserMessageId = null;
     }
 

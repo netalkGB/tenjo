@@ -23,6 +23,97 @@ export async function getThreadMessages(
   }
 }
 
+/**
+ * Reads an SSE stream and dispatches parsed chunks to the provided callbacks.
+ */
+async function processSSEStream(
+  response: Response,
+  callbacks: SendMessageCallbacks
+): Promise<void> {
+  if (!response.body) {
+    throw new ApiError('Response body is null', null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+
+    // Keep the last line in the buffer as it may be incomplete
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+
+        const parsed = JSON.parse(data);
+        const validated = SSEChunkSchema.parse(parsed);
+
+        if (validated.error) {
+          if (callbacks.onError) {
+            callbacks.onError(validated.error);
+          }
+          throw new ApiError(validated.error, null);
+        }
+
+        if (validated.chunk && callbacks.onChunk) {
+          callbacks.onChunk(validated.chunk);
+        }
+
+        if (validated.thinking && callbacks.onThinking) {
+          callbacks.onThinking(validated.thinking);
+        }
+
+        if (validated.reasoning && callbacks.onReasoning) {
+          callbacks.onReasoning(validated.reasoning);
+        }
+
+        if (validated.generatingTitle && callbacks.onGeneratingTitle) {
+          callbacks.onGeneratingTitle();
+        }
+
+        if (validated.processing && callbacks.onProcessing) {
+          callbacks.onProcessing();
+        }
+
+        if (validated.done && callbacks.onComplete) {
+          callbacks.onComplete(
+            validated.title,
+            validated.userMessageId,
+            validated.assistantMessageId,
+            validated.model,
+            validated.provider
+          );
+        }
+
+        if (validated.toolCall && callbacks.onToolCall) {
+          callbacks.onToolCall(validated.toolCall);
+        }
+      }
+    }
+  }
+}
+
+function buildHeaders(): HeadersInit {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json'
+  };
+  const csrfToken = document.body.dataset.csrfToken;
+  if (csrfToken) {
+    headers['x-csrf-token'] = csrfToken;
+  }
+  return headers;
+}
+
 export async function editAndResendMessage(
   threadId: string,
   messageId: string,
@@ -34,19 +125,11 @@ export async function editAndResendMessage(
   try {
     const requestData = { message, modelId, enabledTools };
 
-    const csrfToken = document.body.dataset.csrfToken;
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json'
-    };
-    if (csrfToken) {
-      headers['x-csrf-token'] = csrfToken;
-    }
-
     const response = await fetch(
       `/api/chat/threads/${threadId}/messages/${messageId}/edit`,
       {
         method: 'POST',
-        headers,
+        headers: buildHeaders(),
         body: JSON.stringify(requestData),
         credentials: 'include',
         signal: callbacks.signal
@@ -60,62 +143,7 @@ export async function editAndResendMessage(
       );
     }
 
-    if (!response.body) {
-      throw new ApiError('Response body is null', null);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-
-      // Keep the last line in the buffer as it may be incomplete
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-
-          const parsed = JSON.parse(data);
-          const validated = SSEChunkSchema.parse(parsed);
-
-          if (validated.chunk && callbacks.onChunk) {
-            callbacks.onChunk(validated.chunk);
-          }
-
-          if (validated.thinking && callbacks.onThinking) {
-            callbacks.onThinking(validated.thinking);
-          }
-
-          if (validated.reasoning && callbacks.onReasoning) {
-            callbacks.onReasoning(validated.reasoning);
-          }
-
-          if (validated.done && callbacks.onComplete) {
-            callbacks.onComplete(
-              validated.title,
-              validated.userMessageId,
-              validated.assistantMessageId,
-              validated.model,
-              validated.provider
-            );
-          }
-
-          if (validated.toolCall && callbacks.onToolCall) {
-            callbacks.onToolCall(validated.toolCall);
-          }
-        }
-      }
-    }
+    await processSSEStream(response, callbacks);
   } catch (error) {
     handleApiError(error);
   }
@@ -139,17 +167,9 @@ export async function sendMessageToThread(
       imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined
     });
 
-    const csrfToken = document.body.dataset.csrfToken;
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json'
-    };
-    if (csrfToken) {
-      headers['x-csrf-token'] = csrfToken;
-    }
-
     const response = await fetch(`/api/chat/threads/${threadId}/messages`, {
       method: 'POST',
-      headers,
+      headers: buildHeaders(),
       body: JSON.stringify(requestData),
       credentials: 'include',
       signal: callbacks.signal
@@ -162,62 +182,7 @@ export async function sendMessageToThread(
       );
     }
 
-    if (!response.body) {
-      throw new ApiError('Response body is null', null);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-
-      // Keep the last line in the buffer as it may be incomplete
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-
-          const parsed = JSON.parse(data);
-          const validated = SSEChunkSchema.parse(parsed);
-
-          if (validated.chunk && callbacks.onChunk) {
-            callbacks.onChunk(validated.chunk);
-          }
-
-          if (validated.thinking && callbacks.onThinking) {
-            callbacks.onThinking(validated.thinking);
-          }
-
-          if (validated.reasoning && callbacks.onReasoning) {
-            callbacks.onReasoning(validated.reasoning);
-          }
-
-          if (validated.done && callbacks.onComplete) {
-            callbacks.onComplete(
-              validated.title,
-              validated.userMessageId,
-              validated.assistantMessageId,
-              validated.model,
-              validated.provider
-            );
-          }
-
-          if (validated.toolCall && callbacks.onToolCall) {
-            callbacks.onToolCall(validated.toolCall);
-          }
-        }
-      }
-    }
+    await processSSEStream(response, callbacks);
   } catch (error) {
     handleApiError(error);
   }

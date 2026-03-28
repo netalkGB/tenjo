@@ -2,9 +2,11 @@ import { ReactNode } from 'react';
 import { AssistantMessage } from './assistant-message';
 import { AssistantMessageActions } from './assistant-message-actions';
 import { ToolCallSection } from './tool-call-section';
+import { ToolCallItem } from './tool-call-section';
 import type { ToolCallInfo } from './tool-call-section';
 import { ThinkingBlock } from './thinking-block';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { MessagePart } from '@/state/chatTypes';
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   lmstudio: 'LM Studio',
@@ -33,6 +35,7 @@ interface AssistantMessageSectionProps {
   skeleton?: boolean;
   isStreaming?: boolean;
   toolCalls?: ToolCallInfo[];
+  contentParts?: MessagePart[];
   onRetry?: () => void;
   onCopy?: () => void;
   onPrevious?: () => void;
@@ -49,6 +52,7 @@ export function AssistantMessageSection({
   skeleton = false,
   isStreaming = false,
   toolCalls,
+  contentParts,
   onRetry,
   onCopy,
   onPrevious,
@@ -72,11 +76,19 @@ export function AssistantMessageSection({
     );
   }
 
+  // Build a lookup map for tool calls by ID
+  const toolCallMap = new Map<string, ToolCallInfo>();
+  if (toolCalls) {
+    for (const tc of toolCalls) {
+      toolCallMap.set(tc.toolCallId, tc);
+    }
+  }
+
+  const hasChronologicalParts =
+    contentParts && contentParts.length > 0 && toolCallMap.size > 0;
+
   return (
     <>
-      {toolCalls && toolCalls.length > 0 && (
-        <ToolCallSection toolCalls={toolCalls} />
-      )}
       <span className="text-xs text-muted-foreground">
         {formatModelLabel(modelName, providerType)}
       </span>
@@ -86,7 +98,33 @@ export function AssistantMessageSection({
           isStreaming={isStreaming && !message}
         />
       )}
-      <AssistantMessage>{message}</AssistantMessage>
+      {hasChronologicalParts ? (
+        // Render parts in chronological order
+        contentParts.map((part, index) => {
+          if (part.type === 'toolCall') {
+            const tc = toolCallMap.get(part.toolCallId);
+            if (!tc) return null;
+            return (
+              <div key={part.toolCallId} className="mb-1.5">
+                <ToolCallItem toolCall={tc} />
+              </div>
+            );
+          }
+          return (
+            <AssistantMessage key={`text-${index}`}>
+              {part.content}
+            </AssistantMessage>
+          );
+        })
+      ) : (
+        // Fallback: original order (toolCalls first, then text)
+        <>
+          {toolCalls && toolCalls.length > 0 && (
+            <ToolCallSection toolCalls={toolCalls} />
+          )}
+          <AssistantMessage>{message}</AssistantMessage>
+        </>
+      )}
       <AssistantMessageActions
         isVisible={!isStreaming}
         currentCount={currentCount}

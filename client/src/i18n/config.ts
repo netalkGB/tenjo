@@ -5,19 +5,43 @@ import ja from './locales/ja.json';
 
 i18n.load({ en, ja });
 
-const SUPPORTED_LOCALES = ['en', 'ja'];
-const STORAGE_KEY = 'i18nextLng';
+export const SUPPORTED_LOCALES = ['en', 'ja'] as const;
+export type LocaleMode = 'auto' | (typeof SUPPORTED_LOCALES)[number];
+export const LOCALE_MODES: readonly LocaleMode[] = [
+  'auto',
+  ...SUPPORTED_LOCALES
+] as const;
 
-function detectLocale(): string {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored && SUPPORTED_LOCALES.includes(stored)) return stored;
-
+/**
+ * Detects the best locale from the browser language settings.
+ */
+function detectBrowserLocale(): (typeof SUPPORTED_LOCALES)[number] {
   const browserLang = navigator.language.split('-')[0];
-  if (SUPPORTED_LOCALES.includes(browserLang)) return browserLang;
-
+  if (
+    SUPPORTED_LOCALES.includes(
+      browserLang as (typeof SUPPORTED_LOCALES)[number]
+    )
+  ) {
+    return browserLang as (typeof SUPPORTED_LOCALES)[number];
+  }
   return 'en';
 }
 
-i18n.activate(detectLocale());
+/**
+ * Resolves a locale mode to an actual locale for i18n activation.
+ */
+function resolveLocale(mode: LocaleMode): (typeof SUPPORTED_LOCALES)[number] {
+  return mode === 'auto' ? detectBrowserLocale() : mode;
+}
+
+/**
+ * Activates the given locale mode.
+ */
+export function changeLocale(mode: LocaleMode): void {
+  i18n.activate(resolveLocale(mode));
+}
+
+// Initialize with browser detection (auto) on startup
+i18n.activate(detectBrowserLocale());
 
 export { i18n };

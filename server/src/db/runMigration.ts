@@ -88,8 +88,14 @@ export async function runMigrations(pool: Pool): Promise<number> {
  * Run all migrations from scratch (no history tracking).
  * Used by test setup where schema is dropped and recreated each time.
  */
-export async function runAllMigrations(pool: Pool): Promise<void> {
+const TEST_SKIP_PREFIX = '!test skip!';
+
+export async function runAllMigrations(
+  pool: Pool,
+  options?: { isTest?: boolean }
+): Promise<void> {
   for (const m of migrations) {
+    if (options?.isTest && m.name.startsWith(TEST_SKIP_PREFIX)) continue;
     await pool.query(m.up);
   }
 }

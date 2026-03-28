@@ -380,7 +380,7 @@ export class MessageService {
 
     // Save to DB when context is added
     chatClient.onContextAdded(async (msg: MessageRequest) => {
-      logger.debug('onContextAdded called, role:', msg.role);
+      logger.debug(`onContextAdded called, role: ${msg.role}`);
 
       // Restore data URIs back to original relative URLs before DB save
       let messageToSave = msg;
@@ -417,14 +417,13 @@ export class MessageService {
 
         if (msg.role === 'user') {
           userMessageId = savedMessage.id;
-          logger.debug('User message saved, userMessageId:', userMessageId);
+          logger.debug(`User message saved, userMessageId: ${userMessageId}`);
         }
 
         if (msg.role === 'assistant') {
           assistantMessageId = savedMessage.id;
           logger.debug(
-            'Assistant message saved, assistantMessageId:',
-            assistantMessageId
+            `Assistant message saved, assistantMessageId: ${assistantMessageId}`
           );
         }
 
@@ -472,7 +471,8 @@ export class MessageService {
       ) {
         iteration++;
 
-        for (const toolCall of toolCalls) {
+        const currentBatch = toolCalls;
+        for (const toolCall of currentBatch) {
           try {
             const toolArgs = JSON.parse(toolCall.function.arguments) as Record<
               string,
@@ -517,6 +517,7 @@ export class MessageService {
             }
 
             if (!approved) {
+              // Add rejected result for the current tool
               chatClient.addToolCallResult(toolCall.id, {
                 error: 'Tool execution rejected by user'
               });
@@ -531,7 +532,34 @@ export class MessageService {
                   }
                 })}\n\n`
               );
-              continue;
+
+              // Add cancelled result for all remaining tools in this batch
+              const currentIndex = currentBatch.indexOf(toolCall);
+              for (let i = currentIndex + 1; i < currentBatch.length; i++) {
+                const remaining = currentBatch[i];
+                chatClient.addToolCallResult(remaining.id, {
+                  error:
+                    'Tool execution cancelled because a prior tool was rejected'
+                });
+                writer.write(
+                  `data: ${JSON.stringify({
+                    toolCall: {
+                      type: 'result',
+                      toolCallId: remaining.id,
+                      toolName: remaining.function.name,
+                      result: {
+                        error:
+                          'Tool execution cancelled because a prior tool was rejected'
+                      },
+                      success: false
+                    }
+                  })}\n\n`
+                );
+              }
+
+              // Stop the entire tool execution loop
+              toolCalls = null;
+              break;
             }
 
             writer.write(
@@ -583,6 +611,10 @@ export class MessageService {
           }
         }
 
+        // If toolCalls was set to null due to rejection, stop the loop
+        if (!toolCalls) break;
+
+        writer.write(`data: ${JSON.stringify({ processing: true })}\n\n`);
         await chatClient.validateToolCallResult(abortController.signal);
         toolCalls = chatClient.getToolCallPlan();
       }

@@ -3,7 +3,6 @@ import type {
   User,
   UpdateUser
 } from '../repositories/UserRepository';
-import type { UserSettings } from '../repositories/GlobalSettingRepository';
 import type { UserRole } from '../types/api';
 import { ServiceError } from '../errors/ServiceError';
 
@@ -68,8 +67,7 @@ export class UserService {
     if (!user) {
       throw new UserNotFoundError();
     }
-    const userSettings = (user.settings ?? {}) as UserSettings;
-    return userSettings.activeModelId;
+    return user.settings?.activeModelId;
   }
 
   async getProfile(userId: string): Promise<ProfileInfo> {
@@ -179,6 +177,36 @@ export class UserService {
     });
   }
 
+  async getUserPreferences(
+    userId: string
+  ): Promise<{ language?: string; theme?: string }> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new UserNotFoundError();
+    return {
+      language: user.settings?.language,
+      theme: user.settings?.theme
+    };
+  }
+
+  async updateUserPreferences(
+    userId: string,
+    preferences: { language?: string; theme?: string }
+  ): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new UserNotFoundError();
+
+    // Only merge defined values to avoid overwriting existing fields with undefined
+    const merged = { ...user.settings };
+    if (preferences.language !== undefined) {
+      merged.language = preferences.language;
+    }
+    if (preferences.theme !== undefined) {
+      merged.theme = preferences.theme;
+    }
+
+    await this.userRepo.update(userId, { settings: merged });
+  }
+
   async setActiveModel(userId: string, activeId: string): Promise<void> {
     if (typeof activeId !== 'string') {
       throw new UserValidationError('activeId is required');
@@ -189,9 +217,8 @@ export class UserService {
       throw new UserNotFoundError();
     }
 
-    const settings = (user.settings ?? {}) as UserSettings;
     await this.userRepo.update(userId, {
-      settings: { ...settings, activeModelId: activeId }
+      settings: { ...user.settings, activeModelId: activeId }
     });
   }
 }

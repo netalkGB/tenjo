@@ -35,6 +35,9 @@ export default [
         Response: 'readonly',
         TextDecoder: 'readonly',
         AbortSignal: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        RequestInit: 'readonly',
       },
     },
     plugins: {

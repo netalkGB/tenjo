@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OAuth Callback</title>
+  </head>
+  <body>
+    <script>
+      (function () {
+        var success = <%= success %>;
+        var serverName = '<%= typeof serverName !== "undefined" ? serverName : "" %>';
+        var errorMessage = '<%= typeof errorMessage !== "undefined" ? errorMessage : "" %>';
+
+        if (window.opener) {
+          if (success) {
+            window.opener.postMessage(
+              { type: 'mcp-oauth-success', serverName: serverName },
+              window.location.origin
+            );
+          } else {
+            window.opener.postMessage(
+              { type: 'mcp-oauth-error', error: errorMessage },
+              window.location.origin
+            );
+          }
+        }
+        window.close();
+      })();
+    </script>
+    <p>You may close this window.</p>
+  </body>
+</html>

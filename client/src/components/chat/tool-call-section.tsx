@@ -25,7 +25,7 @@ interface ToolCallSectionProps {
   toolCalls: ToolCallInfo[];
 }
 
-function ToolCallItem({ toolCall }: { toolCall: ToolCallInfo }) {
+export function ToolCallItem({ toolCall }: { toolCall: ToolCallInfo }) {
   const [open, setOpen] = useState(toolCall.status === 'pendingApproval');
   const { t } = useTranslation();
 

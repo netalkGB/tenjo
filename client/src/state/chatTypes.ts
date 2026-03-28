@@ -1,6 +1,10 @@
 import type { ToolCallInfo } from '@/components/chat';
 import type { ToolCallEvent } from '@/api/server/chat';
 
+export type MessagePart =
+  | { type: 'text'; content: string }
+  | { type: 'toolCall'; toolCallId: string };
+
 export interface Message {
   id?: string;
   type: 'user' | 'assistant';
@@ -15,6 +19,7 @@ export interface Message {
   model?: string | null;
   provider?: string | null;
   toolCalls?: ToolCallInfo[];
+  contentParts?: MessagePart[];
 }
 
 export interface ChatState {

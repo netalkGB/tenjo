@@ -95,6 +95,18 @@ export function MarkdownRenderer({ markdown }: MarkdownRendererProps) {
           },
           pre({ children: markdown }) {
             return <>{markdown}</>;
+          },
+          a({ children, href, ...props }) {
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                {...props}
+              >
+                {children}
+              </a>
+            );
           }
         }}
       >

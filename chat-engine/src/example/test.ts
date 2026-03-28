@@ -1,9 +1,9 @@
 import * as readline from 'readline';
 //import { OpenAIChatApiClient } from './OpenAIChatApiClient.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { ChatClient, ChatStatus } from './ChatClient.js';
-import { McpClientManager } from './McpClientManager.js';
-import { LmStudioChatApiClient } from './LmStudioChatApiClient.js';
+import { ChatClient, ChatStatus, MessageRequest } from '../ChatClient.js';
+import { McpClientManager } from '../McpClientManager.js';
+import { LmStudioChatApiClient } from '../LmStudioChatApiClient.js';
 
 async function main() {
   const mcpClientManager = new McpClientManager(
@@ -52,7 +52,7 @@ async function main() {
   // Reference implementation of onContextAdded event
   // Called each time context is added
   // In the future, database writes will be performed at this timing
-  client.onContextAdded((message, allMessages) => {
+  client.onContextAdded((message: MessageRequest, allMessages: MessageRequest[]) => {
     console.log('\n[Context Added Event]');
     console.log(`Role: ${message.role}`);
     console.log(`Content length: ${message.content?.length || 0}`);
@@ -99,40 +99,42 @@ async function main() {
 
   async function sendMessage(msg: string, imageUrls?: string[]) {
     await client.sendMessage(msg, imageUrls);
-    const toolCalls = client.getToolCallPlan();
-    if (toolCalls == null) {
-      return;
-    }
-    for (const toolCall of toolCalls) {
-      const { name, arguments: args } = toolCall.function;
-      console.log(`\n[Tool execution requested: ${name}]`);
 
-      // Confirmation of tool execution
-      const confirmed = await confirmToolExecution(name, args);
-      if (!confirmed) {
-        console.log('[Tool execution cancelled by user]');
-        client.addToolCallResult(toolCall.id, {
-          error: 'Tool execution cancelled by user',
-        });
-        await client.validateToolCallResult();
-        continue;
+    // Agentic tool-calling loop: keep executing until LLM gives a final text response
+    let toolCalls = client.getToolCallPlan();
+    while (toolCalls && toolCalls.length > 0) {
+      // Execute all tool calls in the current round
+      for (const toolCall of toolCalls) {
+        const { name, arguments: args } = toolCall.function;
+        console.log(`\n[Tool execution requested: ${name}]`);
+
+        const confirmed = await confirmToolExecution(name, args);
+        if (!confirmed) {
+          console.log('[Tool execution cancelled by user]');
+          client.addToolCallResult(toolCall.id, {
+            error: 'Tool execution cancelled by user',
+          });
+          continue;
+        }
+
+        console.log(`[Executing tool: ${name}]`);
+        try {
+          const toolResult = await mcpClientManager.callTool(
+            name,
+            JSON.parse(args)
+          );
+          client.addToolCallResult(toolCall.id, toolResult);
+        } catch (error) {
+          console.error(`Failed to execute MCP tool ${name}:`, error);
+          client.addToolCallResult(toolCall.id, {
+            error: error instanceof Error ? error.message : '',
+          });
+        }
       }
 
-      console.log(`[Executing tool: ${name}]`);
-      try {
-        const toolResult = await mcpClientManager.callTool(
-          name,
-          JSON.parse(args)
-        );
-        client.addToolCallResult(toolCall.id, toolResult);
-      } catch (error) {
-        console.error(`Failed to execute MCP tool ${name}:`, error);
-        client.addToolCallResult(toolCall.id, {
-          error: error instanceof Error ? error.message : '',
-        });
-        throw error;
-      }
+      // Send all tool results back to LLM and get next response
       await client.validateToolCallResult();
+      toolCalls = client.getToolCallPlan();
     }
   }
 

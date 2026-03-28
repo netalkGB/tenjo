@@ -1,4 +1,5 @@
 import { BaseRepository } from './BaseRepository';
+import type { UserSettings } from './GlobalSettingRepository';
 
 export interface User {
   id: string;
@@ -7,7 +8,7 @@ export interface User {
   email: string;
   password: string;
   user_role: 'admin' | 'standard';
-  settings: unknown;
+  settings: UserSettings;
   created_by: string | null;
   updated_by: string | null;
   created_at: Date | null;
@@ -21,7 +22,7 @@ export interface InsertUser {
   email: string;
   password: string;
   user_role?: 'admin' | 'standard';
-  settings?: unknown;
+  settings?: UserSettings;
   created_by?: string | null;
   updated_by?: string | null;
   created_at?: Date | null;

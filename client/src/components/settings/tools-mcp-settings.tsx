@@ -9,14 +9,25 @@ import {
   upsertToolApprovalRule,
   bulkUpdateToolApprovalRules,
   type ToolApprovalRule,
+  startMcpOAuth,
   type McpServersConfig,
-  type McpServerConfig
+  type McpServerConfig,
+  type OAuthHttpMcpServerConfig,
+  type ApproveState
 } from '@/api/server/settings';
 import { ApiError } from '@/api/errors/ApiError';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Trash2, Plus, Pencil, Info } from 'lucide-react';
+import {
+  Trash2,
+  Plus,
+  Pencil,
+  Info,
+  ShieldAlert,
+  KeyRound,
+  Loader2
+} from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -64,6 +75,7 @@ function ToolApprovalRulesSkeleton() {
           <div className="flex gap-2">
             <Skeleton className="h-8 w-16 rounded-md" />
             <Skeleton className="h-8 w-16 rounded-md" />
+            <Skeleton className="h-8 w-16 rounded-md" />
           </div>
         </div>
       ))}
@@ -72,7 +84,7 @@ function ToolApprovalRulesSkeleton() {
 }
 
 function getMcpServerSummary(config: McpServerConfig): string {
-  if (config.type === 'http') {
+  if (config.type === 'http' || config.type === 'oauth-http') {
     return config.url;
   }
   const parts = [config.command, ...(config.args ?? [])];
@@ -90,9 +102,13 @@ export function ToolsMcpSettings() {
   >([]);
   const [rulesLoaded, setRulesLoaded] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServersConfig>({});
+  const [oauthCallbackUrl, setOauthCallbackUrl] = useState('');
   const [mcpServersLoaded, setMcpServersLoaded] = useState(false);
   const [mcpToolsByServer, setMcpToolsByServer] = useState<
     Record<string, string[]>
+  >({});
+  const [mcpConnectionErrors, setMcpConnectionErrors] = useState<
+    Record<string, string>
   >({});
   const [mcpToolsLoaded, setMcpToolsLoaded] = useState(false);
 
@@ -104,6 +120,11 @@ export function ToolsMcpSettings() {
     McpServerConfig | undefined
   >(undefined);
 
+  // Re-authorization state: tracks which server is currently being re-authorized
+  const [reauthorizingServer, setReauthorizingServer] = useState<
+    string | undefined
+  >(undefined);
+
   const isAdmin = userRole === 'admin';
 
   const initialized = useRef(false);
@@ -113,6 +134,20 @@ export function ToolsMcpSettings() {
     loadToolApprovalRules();
     loadMcpServers();
     loadMcpTools();
+  });
+
+  // Reload data when OAuth authorization completes in a popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'mcp-oauth-success') {
+        setReauthorizingServer(undefined);
+        loadMcpServers();
+        loadMcpTools();
+        reloadTools();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   });
 
   const loadToolApprovalRules = async () => {
@@ -134,6 +169,7 @@ export function ToolsMcpSettings() {
     try {
       const response = await getMcpServers();
       setMcpServers(response.mcpServers);
+      setOauthCallbackUrl(response.oauthCallbackUrl);
     } catch {
       openDialog({
         title: t('error'),
@@ -149,6 +185,7 @@ export function ToolsMcpSettings() {
     try {
       const response = await getMcpTools();
       setMcpToolsByServer(response.tools);
+      setMcpConnectionErrors(response.errors ?? {});
     } catch {
       openDialog({
         title: t('error'),
@@ -235,20 +272,49 @@ export function ToolsMcpSettings() {
     });
   };
 
-  const handleToggleToolApproval = async (
+  const handleReauthorize = async (
+    name: string,
+    config: OAuthHttpMcpServerConfig
+  ) => {
+    setReauthorizingServer(name);
+    try {
+      const response = await startMcpOAuth({
+        serverName: name,
+        url: config.url,
+        clientId: config.clientId || undefined,
+        clientSecret: config.clientSecret || undefined
+      });
+      window.open(
+        response.authorizationUrl,
+        'mcp-oauth',
+        'width=600,height=700,menubar=no,toolbar=no'
+      );
+    } catch {
+      setReauthorizingServer(undefined);
+      openDialog({
+        title: t('error'),
+        description: t('settings_mcp_oauth_reauthorize_error'),
+        type: 'ok'
+      });
+    }
+  };
+
+  const handleSetToolApprovalState = async (
     toolName: string,
-    currentlyApproved: boolean
+    state: ApproveState
   ) => {
     try {
-      if (currentlyApproved) {
+      if (state === 'manual') {
+        // Delete rule to revert to default (manual)
         const rule = toolApprovalRules.find(r => r.toolName === toolName);
         if (rule) {
           await deleteToolApprovalRule(rule.id);
         }
       } else {
-        await upsertToolApprovalRule({ toolName, autoApprove: true });
+        await upsertToolApprovalRule({ toolName, approve: state });
       }
       await loadToolApprovalRules();
+      await reloadTools();
     } catch {
       openDialog({
         title: t('error'),
@@ -258,19 +324,20 @@ export function ToolsMcpSettings() {
     }
   };
 
-  const handleToggleServerApproval = async (
+  const handleSetServerApprovalState = async (
     serverName: string,
-    enableAll: boolean
+    state: ApproveState
   ) => {
     const tools = mcpToolsByServer[serverName] ?? [];
     if (tools.length === 0) return;
 
     try {
-      const response = await bulkUpdateToolApprovalRules({
+      await bulkUpdateToolApprovalRules({
         toolNames: tools,
-        autoApprove: enableAll
+        approve: state
       });
-      setToolApprovalRules(response.rules);
+      await loadToolApprovalRules();
+      await reloadTools();
     } catch {
       openDialog({
         title: t('error'),
@@ -329,50 +396,95 @@ export function ToolsMcpSettings() {
           )}
 
           {mcpServersLoaded &&
-            mcpServerEntries.map(([name, config]) => (
-              <div
-                key={name}
-                className="flex items-center justify-between border rounded-lg p-4"
-              >
-                <div className="space-y-1 min-w-0 flex-1">
-                  <div className="font-medium">{name}</div>
-                  <div className="text-sm text-muted-foreground truncate">
-                    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium mr-2">
-                      {config.type === 'http' ? 'HTTP' : 'Stdio'}
-                    </span>
-                    {getMcpServerSummary(config)}
+            mcpServerEntries.map(([name, config]) => {
+              const isOAuth = config.type === 'oauth-http';
+              const hasConnectionError = !!mcpConnectionErrors[name];
+              const isUnauthorized =
+                isOAuth && (!config.authorized || hasConnectionError);
+              const isReauthorizing = reauthorizingServer === name;
+
+              return (
+                <div
+                  key={name}
+                  className="flex items-center justify-between border rounded-lg p-4"
+                >
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{name}</span>
+                      {isUnauthorized && !isReauthorizing && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                          <ShieldAlert className="size-3" />
+                          {t('settings_mcp_oauth_unauthorized')}
+                        </span>
+                      )}
+                      {isReauthorizing && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          <Loader2 className="size-3 animate-spin" />
+                          {t('settings_mcp_oauth_waiting')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground truncate">
+                      <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium mr-2">
+                        {config.type === 'http'
+                          ? 'HTTP'
+                          : isOAuth
+                            ? 'OAuth'
+                            : 'Stdio'}
+                      </span>
+                      {getMcpServerSummary(config)}
+                    </div>
                   </div>
+                  {isAdmin && (
+                    <div className="flex gap-1 ml-2">
+                      {isOAuth && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleReauthorize(name, config)}
+                              disabled={isReauthorizing}
+                            >
+                              <KeyRound className="size-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('settings_mcp_oauth_reauthorize')}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {!isOAuth && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditMcpServer(name)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('edit')}</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteMcpServer(name)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('delete')}</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
                 </div>
-                {isAdmin && (
-                  <div className="flex gap-1 ml-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEditMcpServer(name)}
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{t('edit')}</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteMcpServer(name)}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{t('delete')}</TooltipContent>
-                    </Tooltip>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
         </CardContent>
       </Card>
 
@@ -385,8 +497,18 @@ export function ToolsMcpSettings() {
             setEditingServerConfig(undefined);
           }}
           onSave={handleSaveMcpServer}
+          onOAuthComplete={() => {
+            setIsMcpDialogOpen(false);
+            setEditingServerName(undefined);
+            setEditingServerConfig(undefined);
+            loadMcpServers();
+            loadMcpTools();
+            reloadTools();
+          }}
           initialName={editingServerName}
           initialConfig={editingServerConfig}
+          existingNames={Object.keys(mcpServers)}
+          oauthCallbackUrl={oauthCallbackUrl}
         />
       )}
 
@@ -408,11 +530,6 @@ export function ToolsMcpSettings() {
             hasMcpTools &&
             toolServerEntries.map(([serverName, tools]) => {
               if (tools.length === 0) return null;
-              const allApproved = tools.every(tool =>
-                toolApprovalRules.some(
-                  r => r.toolName === tool && r.autoApprove
-                )
-              );
               return (
                 <div key={serverName} className="space-y-2">
                   <div className="flex items-center justify-between px-1">
@@ -425,12 +542,33 @@ export function ToolsMcpSettings() {
                         variant="ghost"
                         className="h-auto py-0.5 px-1.5 text-xs"
                         onClick={() =>
-                          handleToggleServerApproval(serverName, !allApproved)
+                          handleSetServerApprovalState(
+                            serverName,
+                            'auto_approve'
+                          )
                         }
                       >
-                        {allApproved
-                          ? t('tools_all_approve_off')
-                          : t('tools_all_approve_on')}
+                        {t('tools_all_approve_on')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-auto py-0.5 px-1.5 text-xs"
+                        onClick={() =>
+                          handleSetServerApprovalState(serverName, 'manual')
+                        }
+                      >
+                        {t('tools_all_manual')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-auto py-0.5 px-1.5 text-xs"
+                        onClick={() =>
+                          handleSetServerApprovalState(serverName, 'banned')
+                        }
+                      >
+                        {t('tools_all_banned')}
                       </Button>
                     </div>
                   </div>
@@ -438,7 +576,8 @@ export function ToolsMcpSettings() {
                     const existingRule = toolApprovalRules.find(
                       r => r.toolName === tool
                     );
-                    const isAutoApproved = existingRule?.autoApprove ?? false;
+                    const approveState: ApproveState =
+                      existingRule?.approve ?? 'manual';
 
                     return (
                       <div
@@ -449,25 +588,43 @@ export function ToolsMcpSettings() {
                         <div className="flex gap-2">
                           <Button
                             size="sm"
-                            variant={isAutoApproved ? 'default' : 'outline'}
-                            onClick={() =>
-                              !isAutoApproved &&
-                              handleToggleToolApproval(tool, false)
+                            variant={
+                              approveState === 'auto_approve'
+                                ? 'default'
+                                : 'outline'
                             }
-                            disabled={isAutoApproved}
+                            onClick={() =>
+                              handleSetToolApprovalState(tool, 'auto_approve')
+                            }
+                            disabled={approveState === 'auto_approve'}
                           >
                             {t('settings_auto_approve_on')}
                           </Button>
                           <Button
                             size="sm"
-                            variant={!isAutoApproved ? 'default' : 'outline'}
-                            onClick={() =>
-                              isAutoApproved &&
-                              handleToggleToolApproval(tool, true)
+                            variant={
+                              approveState === 'manual' ? 'default' : 'outline'
                             }
-                            disabled={!isAutoApproved}
+                            onClick={() =>
+                              handleSetToolApprovalState(tool, 'manual')
+                            }
+                            disabled={approveState === 'manual'}
                           >
                             {t('settings_auto_approve_off')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={
+                              approveState === 'banned'
+                                ? 'destructive'
+                                : 'outline'
+                            }
+                            onClick={() =>
+                              handleSetToolApprovalState(tool, 'banned')
+                            }
+                            disabled={approveState === 'banned'}
+                          >
+                            {t('settings_tool_banned')}
                           </Button>
                         </div>
                       </div>

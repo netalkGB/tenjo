@@ -1,7 +1,6 @@
 import { MainLayout } from '../layout';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useState } from 'react';
-import { User, Cpu, Wrench, Users, ScrollText } from 'lucide-react';
+import { Settings2, User, Cpu, Wrench, Users, ScrollText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useUser } from '@/hooks/useUser';
@@ -10,8 +9,11 @@ import { ModelSettings } from '@/components/settings/model-settings';
 import { ToolsMcpSettings } from '@/components/settings/tools-mcp-settings';
 import { UserSettings } from '@/components/settings/user-settings';
 import { LicenseSettings } from '@/components/settings/license-settings';
+import { GeneralSettings } from '@/components/settings/general-settings';
+import { useParams, useNavigate } from 'react-router';
 
 type SettingsCategory =
+  | 'general'
   | 'profile'
   | 'models'
   | 'tools-mcp'
@@ -19,6 +21,7 @@ type SettingsCategory =
   | 'licenses';
 
 const categoryIcons: Record<SettingsCategory, typeof User> = {
+  general: Settings2,
   profile: User,
   models: Cpu,
   'tools-mcp': Wrench,
@@ -27,6 +30,7 @@ const categoryIcons: Record<SettingsCategory, typeof User> = {
 };
 
 const categoryI18nKeys = {
+  general: 'settings_category_general',
   profile: 'settings_category_profile',
   models: 'settings_category_models',
   'tools-mcp': 'settings_category_tools_mcp',
@@ -39,16 +43,29 @@ function getSettingsCategories(
   isAdmin: boolean
 ): SettingsCategory[] {
   if (singleUserMode) {
-    return ['models', 'tools-mcp', 'licenses'];
+    return ['general', 'models', 'tools-mcp', 'licenses'];
   }
   if (isAdmin) {
-    return ['profile', 'models', 'tools-mcp', 'users', 'licenses'];
+    return ['general', 'profile', 'models', 'tools-mcp', 'users', 'licenses'];
   }
-  return ['profile', 'models', 'tools-mcp', 'licenses'];
+  return ['general', 'profile', 'models', 'tools-mcp', 'licenses'];
+}
+
+function isSettingsCategory(value: string): value is SettingsCategory {
+  return [
+    'general',
+    'profile',
+    'models',
+    'tools-mcp',
+    'users',
+    'licenses'
+  ].includes(value);
 }
 
 function SettingsCategoryContent({ category }: { category: SettingsCategory }) {
   switch (category) {
+    case 'general':
+      return <GeneralSettings />;
     case 'profile':
       return <ProfileSettings />;
     case 'models':
@@ -66,11 +83,16 @@ export function Settings() {
   const { t } = useTranslation();
   const { userRole, singleUserMode } = useUser();
   const isAdmin = userRole === 'admin';
+  const navigate = useNavigate();
+  const { category: categoryParam } = useParams<{ category: string }>();
 
   const categories = getSettingsCategories(singleUserMode, isAdmin);
-  const [activeCategory, setActiveCategory] = useState<SettingsCategory>(
-    categories[0]
-  );
+  const activeCategory: SettingsCategory =
+    categoryParam &&
+    isSettingsCategory(categoryParam) &&
+    categories.includes(categoryParam)
+      ? categoryParam
+      : categories[0];
 
   return (
     <MainLayout
@@ -87,7 +109,7 @@ export function Settings() {
                     key={category}
                     variant={isActive ? 'secondary' : 'ghost'}
                     className="justify-start gap-2"
-                    onClick={() => setActiveCategory(category)}
+                    onClick={() => navigate(`/settings/${category}`)}
                   >
                     <Icon className="size-4" />
                     {t(categoryI18nKeys[category])}

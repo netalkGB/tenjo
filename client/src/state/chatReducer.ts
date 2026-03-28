@@ -57,7 +57,8 @@ export const chatReducer = (
             type: 'assistant' as const,
             content: '',
             isStreaming: true,
-            parentMessageId: undefined
+            parentMessageId: undefined,
+            contentParts: []
           }
         ]
       };
@@ -76,7 +77,8 @@ export const chatReducer = (
             type: 'assistant' as const,
             content: '',
             isStreaming: true,
-            parentMessageId: undefined
+            parentMessageId: undefined,
+            contentParts: []
           }
         ]
       };
@@ -89,9 +91,20 @@ export const chatReducer = (
         messages[lastIndex].type === 'assistant' &&
         messages[lastIndex].isStreaming
       ) {
+        const parts = [...(messages[lastIndex].contentParts ?? [])];
+        const lastPart = parts[parts.length - 1];
+        if (lastPart && lastPart.type === 'text') {
+          parts[parts.length - 1] = {
+            ...lastPart,
+            content: lastPart.content + action.payload.chunk
+          };
+        } else {
+          parts.push({ type: 'text', content: action.payload.chunk });
+        }
         messages[lastIndex] = {
           ...messages[lastIndex],
-          content: messages[lastIndex].content + action.payload.chunk
+          content: messages[lastIndex].content + action.payload.chunk,
+          contentParts: parts
         };
       }
       return { ...state, messages };
@@ -175,6 +188,7 @@ export const chatReducer = (
 
       const msg = { ...messages[lastIndex] };
       const toolCalls = [...(msg.toolCalls || [])];
+      const parts = [...(msg.contentParts ?? [])];
       const event = action.payload;
 
       if (event.type === 'approval_request') {
@@ -184,6 +198,7 @@ export const chatReducer = (
           toolArgs: event.toolArgs,
           status: 'pendingApproval'
         });
+        parts.push({ type: 'toolCall', toolCallId: event.toolCallId });
       } else if (event.type === 'calling') {
         const idx = toolCalls.findIndex(
           tc => tc.toolCallId === event.toolCallId
@@ -197,6 +212,8 @@ export const chatReducer = (
             toolArgs: event.toolArgs,
             status: 'calling'
           });
+          // Only add part if this is a new tool call (not from approval_request)
+          parts.push({ type: 'toolCall', toolCallId: event.toolCallId });
         }
       } else if (event.type === 'result') {
         const idx = toolCalls.findIndex(
@@ -210,9 +227,11 @@ export const chatReducer = (
             status: 'completed'
           };
         }
+        // No new part for results - the toolCall part already exists
       }
 
       msg.toolCalls = toolCalls;
+      msg.contentParts = parts;
       messages[lastIndex] = msg;
       return { ...state, messages };
     }

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { type ChatApiClient, type ChatApiStatus } from './ChatApiClient';
+import { MessageRole } from './ChatClient';
 
 export type Status = ChatApiStatus;
 
@@ -72,9 +73,9 @@ export interface ModelInfo {
 }
 
 export class OpenAIChatApiClient implements ChatApiClient {
-  private apiBaseUrl: string;
-  private model: string;
-  private apiKey: string | null;
+  protected apiBaseUrl: string;
+  protected model: string;
+  protected apiKey: string | null;
   private tools: ToolDefinitionRequest[] = [];
 
   private onMessage: (data: string) => void = () => {};
@@ -92,6 +93,14 @@ export class OpenAIChatApiClient implements ChatApiClient {
     this.model = params.model;
     this.apiKey = params.apiKey;
     this.tools = params.tools;
+  }
+
+  protected buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
+    return headers;
   }
 
   private convertFilePathToDataUri(filePath: string): string {
@@ -141,10 +150,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
   ): Promise<Response> {
     const resolvedMessages = this.resolveImageUrls(messages);
     const apiUrl = this.apiBaseUrl + '/v1/chat/completions';
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
+    const headers = this.buildHeaders();
 
     const requestBody = {
       model: this.model,
@@ -187,10 +193,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
   ): Promise<Response> {
     const resolvedMessages = this.resolveImageUrls(messages);
     const apiUrl = this.apiBaseUrl + '/v1/chat/completions';
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
+    const headers = this.buildHeaders();
 
     const requestBody = {
       model: this.model,
@@ -218,7 +221,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
     response: Response
   ): Promise<ChatCompletionMessageRepsonse> {
     const message: ChatCompletionMessageRepsonse = {
-      role: undefined,
+      role: MessageRole.ASSISTANT,
       content: undefined,
       tool_calls: undefined,
     };

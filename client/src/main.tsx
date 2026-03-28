@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import axios from 'axios';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -13,19 +13,9 @@ import { useDialog } from '@/hooks/useDialog';
 
 import { routes } from './router';
 
+// Apply OS theme preference on startup (before DB preferences are loaded)
 const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-darkModeQuery.addEventListener('change', e => {
-  if (e.matches) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-});
-if (darkModeQuery.matches) {
-  document.documentElement.classList.add('dark');
-} else {
-  document.documentElement.classList.remove('dark');
-}
+document.documentElement.classList.toggle('dark', darkModeQuery.matches);
 
 // Axios interceptor for CSRF token
 axios.interceptors.request.use(config => {
@@ -51,7 +41,7 @@ axios.interceptors.response.use(
         url === '/api/register' ||
         url.startsWith('/api/register/');
       if (!isAuthPage && !isAuthApi) {
-        window.location.href = '/login';
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
       }
     }
     return Promise.reject(error);
@@ -63,7 +53,9 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary FallbackComponent={ErrorFallback}>
       <I18nProvider i18n={i18n}>
         <DialogProvider>
-          <RouterProvider router={routes} />
+          <Suspense fallback={null}>
+            <RouterProvider router={routes} />
+          </Suspense>
           <DialogStack />
         </DialogProvider>
       </I18nProvider>

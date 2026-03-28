@@ -9,6 +9,13 @@ import { OpenAIChatApiClient } from './OpenAIChatApiClient';
 const QWEN_THINKING_START_TAG = '<think>';
 const QWEN_THINKING_END_TAG = '</think>';
 
+export const MessageRole = {
+  USER: 'user',
+  ASSISTANT: 'assistant',
+  TOOL: 'tool',
+  SYSTEM: 'system',
+} as const;
+
 // Provider-agnostic types (ChatClient layer)
 // These decouple consumers from LmStudioChatApiClient-specific types.
 
@@ -214,7 +221,7 @@ export class ChatClient {
     ];
 
     this.addMessage({
-      role: 'user',
+      role: MessageRole.USER,
       content: content,
     });
     const res = await this.chatApiClient.chatStream(
@@ -281,7 +288,7 @@ export class ChatClient {
 
   public addToolCallResult(toolCallId: string, toolResult: unknown) {
     this.addMessage({
-      role: 'tool',
+      role: MessageRole.TOOL,
       tool_call_id: toolCallId,
       content: JSON.stringify(toolResult),
     });

@@ -1,4 +1,5 @@
 export type {
+  ApproveState,
   ProfileResponse,
   UpdateProfileRequest,
   UpdatePasswordRequest,
@@ -16,6 +17,7 @@ export type {
   BulkUpdateToolApprovalRulesRequest,
   StdioMcpServerConfig,
   HttpMcpServerConfig,
+  OAuthHttpMcpServerConfig,
   McpServerConfig,
   McpServersConfig,
   GetMcpServersResponse,
@@ -36,4 +38,15 @@ export {
   deleteToolApprovalRule,
   bulkUpdateToolApprovalRules
 } from './tool-approval-rules';
-export { getMcpServers, getMcpTools, updateMcpServers } from './mcp-servers';
+export {
+  getMcpServers,
+  getMcpTools,
+  updateMcpServers,
+  startMcpOAuth
+} from './mcp-servers';
+export type { StartOAuthRequest, StartOAuthResponse } from './mcp-servers';
+export type {
+  UserPreferencesResponse,
+  UpdatePreferencesRequest
+} from './schemas';
+export { getPreferences, updatePreferences } from './preferences';

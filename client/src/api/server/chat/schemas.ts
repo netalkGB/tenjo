@@ -24,13 +24,16 @@ export const SSEChunkSchema = z.object({
   thinking: z.string().optional(),
   reasoning: z.string().optional(),
   done: z.boolean().optional(),
+  generatingTitle: z.boolean().optional(),
+  processing: z.boolean().optional(),
   threadId: z.string().optional(),
   title: z.string().optional(),
   userMessageId: z.string().optional(),
   assistantMessageId: z.string().optional(),
   model: z.string().optional(),
   provider: z.string().optional(),
-  toolCall: ToolCallEventSchema.optional()
+  toolCall: ToolCallEventSchema.optional(),
+  error: z.string().optional()
 });
 
 export type SSEChunk = z.infer<typeof SSEChunkSchema>;
@@ -129,7 +132,8 @@ export const ThreadMessageSchema = z.object({
 
 export const ThreadMessagesResponseSchema = z.object({
   messages: z.array(ThreadMessageSchema),
-  title: z.string()
+  title: z.string(),
+  pinned: z.boolean()
 });
 
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;
@@ -154,6 +158,8 @@ export interface SendMessageCallbacks {
   onChunk?: (chunk: string) => void;
   onThinking?: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
+  onGeneratingTitle?: () => void;
+  onProcessing?: () => void;
   onComplete?: (
     title?: string,
     userMessageId?: string,
@@ -162,6 +168,7 @@ export interface SendMessageCallbacks {
     provider?: string
   ) => void;
   onToolCall?: (toolCall: ToolCallEvent) => void;
+  onError?: (error: string) => void;
   signal?: AbortSignal;
 }
 
