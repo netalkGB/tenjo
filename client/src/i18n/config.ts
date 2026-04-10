@@ -1,8 +1,13 @@
 import { i18n } from '@lingui/core';
+import { compileMessage } from '@lingui/message-utils/compileMessage';
 
 import en from './locales/en.json';
 import ja from './locales/ja.json';
 
+// Lingui only auto-registers the message compiler in development builds, so
+// production loses `{placeholder}` interpolation for raw JSON catalogs. Register
+// it explicitly so interpolation works in every build mode.
+i18n.setMessagesCompiler(compileMessage);
 i18n.load({ en, ja });
 
 export const SUPPORTED_LOCALES = ['en', 'ja'] as const;
