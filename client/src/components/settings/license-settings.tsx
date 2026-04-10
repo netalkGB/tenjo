@@ -38,7 +38,10 @@ export function LicenseSettings() {
             <span>{t('settings_licenses_not_generated')}</span>
           </div>
         ) : (
-          <pre className="h-[calc(100vh-280px)] w-full overflow-auto rounded bg-muted p-4 text-xs whitespace-pre-wrap">
+          <pre
+            className="h-[calc(100vh-280px)] w-full overflow-auto rounded bg-muted p-4 text-xs whitespace-pre-wrap"
+            data-testid="settings-licenses-content"
+          >
             {content ?? ''}
           </pre>
         )}

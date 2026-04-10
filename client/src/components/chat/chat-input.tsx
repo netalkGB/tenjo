@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { ArrowUp, Square, Plus, ImagePlus, X } from 'lucide-react';
+import { ArrowUp, Square, Plus, ImagePlus, X, Loader2 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Select,
@@ -19,6 +19,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSettings } from '@/contexts/settings-context';
 import type { Model } from '@/api/server/settings';
 import { ToolPicker } from './tool-picker';
+import { KnowledgePicker } from './knowledge-picker';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   uploadImage,
@@ -27,8 +28,15 @@ import {
 } from '@/api/server/chat/upload';
 import { formatProviderLabel } from '@/lib/providerLabels';
 
-function formatModelLabel(model: Model): string {
-  return `${formatProviderLabel(model.type)} / ${model.model}`;
+function formatModelLabel(model: Model, allModels: Model[]): string {
+  const base = `${formatProviderLabel(model.type)} / ${model.model}`;
+  const hasDuplicateName = allModels.some(
+    m => m.id !== model.id && m.model === model.model
+  );
+  if (hasDuplicateName) {
+    return `${base} (${model.baseUrl})`;
+  }
+  return base;
 }
 
 export interface ImageAttachment {
@@ -43,13 +51,19 @@ export interface ImageAttachment {
 interface ChatInputProps {
   onSendMessage: (text: string, imageUrls: string[]) => void;
   isStreaming?: boolean;
+  isGeneratingLocked?: boolean;
   onStop?: () => void;
+  selectedKnowledge: Set<string>;
+  onToggleKnowledge: (id: string) => void;
 }
 
 export function ChatInput({
   onSendMessage,
   isStreaming,
-  onStop
+  isGeneratingLocked,
+  onStop,
+  selectedKnowledge,
+  onToggleKnowledge
 }: ChatInputProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -63,6 +77,7 @@ export function ChatInput({
     activeModelId,
     setActiveModelId,
     availableToolsByServer,
+    mcpToolErrors,
     enabledTools,
     isToolsLoaded,
     toggleTool,
@@ -84,7 +99,8 @@ export function ChatInput({
 
   const allUploaded = images.every(img => img.uploadedUrl && !img.error);
   const hasContent = text.trim().length > 0 || images.length > 0;
-  const canSend = hasContent && !!activeModelId && allUploaded;
+  const canSend =
+    hasContent && !!activeModelId && allUploaded && !isGeneratingLocked;
 
   const handleSendMessage = () => {
     const textarea = textareaRef.current;
@@ -334,6 +350,7 @@ export function ChatInput({
           ref={textareaRef}
           placeholder={t('chat_placeholder')}
           className="w-full border-0 focus:outline-none focus:ring-0 resize-none overflow-y-auto"
+          data-testid="chat-input-textarea"
           onInput={handleInput}
           onKeyDown={handleKeyDown}
           rows={1}
@@ -343,7 +360,11 @@ export function ChatInput({
         {/* + button with menu */}
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="w-9 h-9 cursor-pointer">
+            <Button
+              variant="outline"
+              className="w-9 h-9 cursor-pointer"
+              data-testid="chat-input-plus-button"
+            >
               <Plus className="w-4 h-4" />
             </Button>
           </PopoverTrigger>
@@ -351,6 +372,7 @@ export function ChatInput({
             <button
               className="flex items-center gap-2 w-full rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
               onClick={handleFileSelect}
+              data-testid="chat-input-image-add-button"
             >
               <ImagePlus className="w-4 h-4" />
               {t('image_add')}
@@ -365,12 +387,18 @@ export function ChatInput({
           multiple
           className="hidden"
           onChange={handleFileInputChange}
+          data-testid="chat-input-file-input"
         />
 
         <div className="flex-1" />
 
+        <KnowledgePicker
+          selectedIds={selectedKnowledge}
+          onToggle={onToggleKnowledge}
+        />
         <ToolPicker
           availableToolsByServer={availableToolsByServer}
+          mcpToolErrors={mcpToolErrors}
           enabledTools={enabledTools}
           onToggle={toggleTool}
           onToggleServer={toggleServerTools}
@@ -382,7 +410,10 @@ export function ChatInput({
           onValueChange={setActiveModelId}
           disabled={models.length === 0}
         >
-          <SelectTrigger className="min-w-30">
+          <SelectTrigger
+            className="min-w-30"
+            data-testid="chat-input-model-select"
+          >
             <SelectValue placeholder={t('settings_select_model')} />
           </SelectTrigger>
           <SelectContent>
@@ -390,7 +421,7 @@ export function ChatInput({
               <SelectLabel>{t('settings_select_model')}</SelectLabel>
               {models.map(model => (
                 <SelectItem key={model.id} value={model.id}>
-                  {formatModelLabel(model)}
+                  {formatModelLabel(model, models)}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -401,6 +432,7 @@ export function ChatInput({
             variant="outline"
             className="w-9 h-9 cursor-pointer"
             onClick={onStop}
+            data-testid="chat-input-stop-button"
           >
             <Square className="w-3 h-3 fill-current" />
           </Button>
@@ -409,11 +441,18 @@ export function ChatInput({
             className="w-9 h-9 cursor-pointer"
             onClick={handleSendMessage}
             disabled={!canSend}
+            data-testid="chat-input-send-button"
           >
             <ArrowUp className="w-3 h-3" />
           </Button>
         )}
       </div>
+      {isGeneratingLocked && (
+        <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>{t('status_generating_locked')}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,3 +10,10 @@ export type {
   InsertMessage,
   UpdateMessage
 } from './MessageRepository';
+
+export { KnowledgeRepository } from './KnowledgeRepository';
+export type {
+  Knowledge,
+  InsertKnowledge,
+  UpdateKnowledge
+} from './KnowledgeRepository';

@@ -65,3 +65,6 @@ server/files/*
 
 # TypeScript
 *.tsbuildinfo
+
+# Playwright MCP
+.playwright-mcp/

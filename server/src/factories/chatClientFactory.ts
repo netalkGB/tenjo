@@ -3,7 +3,8 @@ import {
   OpenAIChatApiClient,
   LmStudioChatApiClient,
   OllamaChatApiClient,
-  type ToolDefinitionRequest
+  type ToolDefinitionRequest,
+  type MessageRequest
 } from 'tenjo-chat-engine';
 import type { ModelConfig } from '../repositories/GlobalSettingRepository';
 
@@ -36,14 +37,44 @@ export function createChatApiClient(
   }
 }
 
-export function createChatClient(
-  config: ModelConfig,
-  tools: ToolDefinitionRequest[] = []
-): ChatClient {
-  const chatClient = new ChatClient(createChatApiClient(config, tools));
-  chatClient.setSystemPrompt({
+function buildSystemPrompt(knowledgeContent?: string): MessageRequest {
+  let text = 'You are a helpful AI assistant.';
+  if (knowledgeContent) {
+    text +=
+      '\n\nI have been informed about and am aware of the following in advance.\n' +
+      knowledgeContent;
+  }
+  return {
     role: 'system',
-    content: [{ type: 'text', text: 'You are a helpful AI assistant.' }]
-  });
+    content: [{ type: 'text', text }]
+  };
+}
+
+interface CreateChatClientOptions {
+  config: ModelConfig;
+  tools?: ToolDefinitionRequest[];
+  knowledgeContent?: string;
+  contextMessages?: MessageRequest[];
+}
+
+/**
+ * Creates a fully initialized ChatClient with system prompt and context messages.
+ * The system prompt is always preserved at index 0, even when context messages are provided.
+ */
+export function createChatClient({
+  config,
+  tools = [],
+  knowledgeContent,
+  contextMessages
+}: CreateChatClientOptions): ChatClient {
+  const chatClient = new ChatClient(createChatApiClient(config, tools));
+  const systemPrompt = buildSystemPrompt(knowledgeContent);
+
+  if (contextMessages && contextMessages.length > 0) {
+    chatClient.setMessages([systemPrompt, ...contextMessages]);
+  } else {
+    chatClient.setMessages([systemPrompt]);
+  }
+
   return chatClient;
 }

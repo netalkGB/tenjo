@@ -126,5 +126,30 @@ describe('GlobalSettingRepository (Integration Tests)', () => {
       const result = await globalSettingRepository.getSettings();
       expect(result).toEqual({ mcpServers: {} });
     });
+
+    it('should store and retrieve arbitrary extra keys like cleaning flag', async () => {
+      const settingsWithCleaning = { cleaning: true } as GlobalSettings & {
+        cleaning: boolean;
+      };
+      await globalSettingRepository.updateSettings(
+        settingsWithCleaning,
+        testUserId
+      );
+
+      const result = await globalSettingRepository.getSettings();
+      expect((result as Record<string, unknown>).cleaning).toBe(true);
+    });
+
+    it('should remove cleaning flag when updated without it', async () => {
+      await globalSettingRepository.updateSettings(
+        { cleaning: true } as GlobalSettings & { cleaning: boolean },
+        testUserId
+      );
+
+      await globalSettingRepository.updateSettings({}, testUserId2);
+
+      const result = await globalSettingRepository.getSettings();
+      expect((result as Record<string, unknown>).cleaning).toBeUndefined();
+    });
   });
 });

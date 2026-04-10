@@ -71,6 +71,7 @@ export const chatReducer = (
           {
             type: 'user' as const,
             content: action.payload.editedMessage,
+            imageUrls: action.payload.imageUrls,
             parentMessageId: action.payload.parentMessageId
           },
           {

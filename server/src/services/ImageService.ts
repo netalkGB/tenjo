@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getDataDir } from '../utils/env';
 import { ServiceError } from '../errors/ServiceError';
 import logger from '../logger';
+import type { FileUploadService } from './FileUploadService';
 
 export class ImageNotFoundError extends ServiceError {
   constructor(message: string = 'File not found') {
@@ -31,10 +30,6 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   '.png': 'image/png'
 };
 
-function getArtifactsDir(): string {
-  return path.join(getDataDir(), 'artifacts');
-}
-
 /**
  * Detect image format by checking magic bytes.
  * Returns the file extension (e.g., '.jpg') or null if not a supported format.
@@ -50,16 +45,14 @@ function detectImageFormat(buffer: Buffer): string | null {
   return null;
 }
 
-async function ensureDirectories(): Promise<void> {
-  await fs.mkdir(getArtifactsDir(), { recursive: true });
-}
-
 export interface UploadResult {
   filename: string;
   url: string;
 }
 
 export class ImageService {
+  constructor(private readonly fileUploadService: FileUploadService) {}
+
   async uploadImage(fileBuffer: Buffer): Promise<UploadResult> {
     if (!fileBuffer || fileBuffer.length === 0) {
       throw new ImageValidationError('No file data received');
@@ -76,13 +69,10 @@ export class ImageService {
       );
     }
 
-    await ensureDirectories();
-
     const id = crypto.randomUUID();
     const filename = `${id}${ext}`;
-    const artifactPath = path.join(getArtifactsDir(), filename);
 
-    await fs.writeFile(artifactPath, fileBuffer);
+    await this.fileUploadService.save(filename, fileBuffer);
 
     return {
       filename,
@@ -101,14 +91,11 @@ export class ImageService {
     const ext = path.extname(sanitized).toLowerCase();
     const contentType = EXTENSION_TO_MIME[ext] ?? 'application/octet-stream';
 
-    const filePath = path.join(getArtifactsDir(), sanitized);
-
     try {
-      await fs.access(filePath);
-      const data = await fs.readFile(filePath);
+      const data = await this.fileUploadService.read(sanitized);
       return { data, contentType };
     } catch {
-      logger.debug('Artifact file not found:', filePath);
+      logger.debug('Artifact file not found:', sanitized);
       throw new ImageNotFoundError();
     }
   }

@@ -118,22 +118,37 @@ export function ChatTitleHeader({
 
   return (
     <div className="flex items-center gap-1">
-      <span className="text-sm">{displayTitle}</span>
+      <span className="text-sm" data-testid="chat-title">
+        {displayTitle}
+      </span>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <button className="inline-flex items-center justify-center rounded-md p-0.5 hover:bg-accent">
+          <button
+            className="inline-flex items-center justify-center rounded-md p-0.5 hover:bg-accent"
+            data-testid="chat-title-menu-button"
+          >
             <ChevronDown className="size-3.5" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={handlePin}>
+          <DropdownMenuItem
+            onClick={handlePin}
+            data-testid="chat-title-pin-menu-item"
+          >
             {currentPinned ? t('unpin') : t('pin')}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleRename}>
+          <DropdownMenuItem
+            onClick={handleRename}
+            data-testid="chat-title-rename-menu-item"
+          >
             {t('rename')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive" onClick={handleDelete}>
+          <DropdownMenuItem
+            className="text-destructive"
+            onClick={handleDelete}
+            data-testid="chat-title-delete-menu-item"
+          >
             {t('delete')}
           </DropdownMenuItem>
         </DropdownMenuContent>

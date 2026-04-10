@@ -55,8 +55,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       cancelText: newConfig.cancelText ?? 'Cancel',
       showCloseButton: newConfig.showCloseButton ?? true,
       closeOnOutsideClick: newConfig.closeOnOutsideClick ?? false,
-      onOk: newConfig.onOk ?? close,
-      onCancel: newConfig.onCancel ?? close,
+      onOk: () => {
+        close();
+        newConfig.onOk?.();
+      },
+      onCancel: () => {
+        close();
+        newConfig.onCancel?.();
+      },
       title: newConfig.title,
       description: newConfig.description,
       content: newConfig.content,

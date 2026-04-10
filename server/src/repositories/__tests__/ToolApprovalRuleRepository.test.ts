@@ -318,6 +318,100 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
     });
   });
 
+  describe('bulkUpsert', () => {
+    it('should return empty array when toolNames is empty', async () => {
+      const result = await toolApprovalRuleRepository.bulkUpsert(
+        testUserId,
+        [],
+        'auto_approve'
+      );
+      expect(result).toEqual([]);
+    });
+
+    it('should create rules for multiple tools', async () => {
+      const result = await toolApprovalRuleRepository.bulkUpsert(
+        testUserId,
+        ['tool_a', 'tool_b', 'tool_c'],
+        'auto_approve'
+      );
+
+      expect(result).toHaveLength(3);
+      expect(result.map((r) => r.tool_name).sort()).toEqual([
+        'tool_a',
+        'tool_b',
+        'tool_c'
+      ]);
+      for (const r of result) {
+        expect(r.approve).toBe('auto_approve');
+      }
+    });
+
+    it('should update existing rules via upsert', async () => {
+      await toolApprovalRuleRepository.create({
+        user_id: testUserId,
+        tool_name: 'tool_a',
+        approve: 'manual'
+      });
+
+      const result = await toolApprovalRuleRepository.bulkUpsert(
+        testUserId,
+        ['tool_a', 'tool_b'],
+        'auto_approve'
+      );
+
+      expect(result).toHaveLength(2);
+      expect(result.find((r) => r.tool_name === 'tool_a')?.approve).toBe(
+        'auto_approve'
+      );
+
+      // Verify no duplicates
+      const rules = await toolApprovalRuleRepository.findByUserId(testUserId);
+      expect(rules).toHaveLength(2);
+    });
+  });
+
+  describe('bulkDeleteByToolNames', () => {
+    it('should do nothing when toolNames is empty', async () => {
+      await toolApprovalRuleRepository.create({
+        user_id: testUserId,
+        tool_name: 'tool_a',
+        approve: 'auto_approve'
+      });
+
+      await toolApprovalRuleRepository.bulkDeleteByToolNames(testUserId, []);
+
+      const rules = await toolApprovalRuleRepository.findByUserId(testUserId);
+      expect(rules).toHaveLength(1);
+    });
+
+    it('should delete only the specified tools', async () => {
+      await toolApprovalRuleRepository.create({
+        user_id: testUserId,
+        tool_name: 'tool_a',
+        approve: 'auto_approve'
+      });
+      await toolApprovalRuleRepository.create({
+        user_id: testUserId,
+        tool_name: 'tool_b',
+        approve: 'auto_approve'
+      });
+      await toolApprovalRuleRepository.create({
+        user_id: testUserId,
+        tool_name: 'tool_c',
+        approve: 'manual'
+      });
+
+      await toolApprovalRuleRepository.bulkDeleteByToolNames(testUserId, [
+        'tool_a',
+        'tool_c'
+      ]);
+
+      const rules = await toolApprovalRuleRepository.findByUserId(testUserId);
+      expect(rules).toHaveLength(1);
+      expect(rules[0].tool_name).toBe('tool_b');
+    });
+  });
+
   describe('shouldAutoApprove', () => {
     it('should return false when no rule exists', async () => {
       const result = await toolApprovalRuleRepository.shouldAutoApprove(

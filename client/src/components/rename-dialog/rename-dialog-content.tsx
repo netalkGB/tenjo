@@ -45,6 +45,7 @@ export function RenameDialogContent({
         onChange={handleChange}
         onFocus={handleFocus}
         placeholder={t('new_name_placeholder')}
+        data-testid="rename-dialog-input"
       />
     </div>
   );

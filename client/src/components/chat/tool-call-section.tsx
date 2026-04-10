@@ -85,16 +85,26 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallInfo }) {
           )}
           {toolCall.status === 'pendingApproval' && (
             <div className="mt-2 flex gap-2">
-              <Button size="sm" onClick={toolCall.onApprove}>
+              <Button
+                size="sm"
+                onClick={toolCall.onApprove}
+                data-testid="tool-call-approve-button"
+              >
                 {t('tool_approve')}
               </Button>
-              <Button size="sm" variant="outline" onClick={toolCall.onReject}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={toolCall.onReject}
+                data-testid="tool-call-reject-button"
+              >
                 {t('tool_reject')}
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={toolCall.onAutoApprove}
+                data-testid="tool-call-auto-approve-button"
               >
                 {t('tool_auto_approve')}
               </Button>

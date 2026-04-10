@@ -35,6 +35,7 @@ export function HistorySection({ skeletonCount = 10 }: HistorySectionProps) {
           <SidebarMenuButton
             className="cursor-pointer"
             onClick={() => setIsDialogOpen(true)}
+            data-testid="sidebar-history-button"
           >
             <MessageSquare />
             <span>{t('history')}</span>
@@ -44,6 +45,7 @@ export function HistorySection({ skeletonCount = 10 }: HistorySectionProps) {
             <button
               className="absolute right-0 top-0 bottom-0 w-8 hover:bg-accent rounded-md flex items-center justify-center"
               onClick={e => e.stopPropagation()}
+              data-testid="sidebar-history-collapse-button"
             >
               <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
             </button>

@@ -47,6 +47,9 @@ export {
 export type { StartOAuthRequest, StartOAuthResponse } from './mcp-servers';
 export type {
   UserPreferencesResponse,
-  UpdatePreferencesRequest
+  UpdatePreferencesRequest,
+  CleanupStatusResponse,
+  StartCleanupResponse
 } from './schemas';
 export { getPreferences, updatePreferences } from './preferences';
+export { getCleanupStatus, startCleanup } from './cleanup';

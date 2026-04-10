@@ -167,6 +167,7 @@ export class McpToolService {
     }
 
     const transports: Transport[] = [];
+    const serverNames: string[] = [];
     const failedServers: Record<string, string> = {};
 
     for (const [serverName, serverConfig] of Object.entries(mcpServers)) {
@@ -181,36 +182,43 @@ export class McpToolService {
       try {
         const transport = await this.createTransportForConfig(serverConfig);
         transports.push(transport);
+        serverNames.push(serverName);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failedServers[serverName] = message;
         logger.warn(
           `Failed to create transport for MCP server: ${serverName}`,
-          {
-            error: message
-          }
+          { error: message }
         );
       }
     }
 
-    if (transports.length > 0) {
-      mcpClientManager.setTransports(transports);
+    if (transports.length === 0) {
+      if (Object.keys(failedServers).length > 0) {
+        const details = Object.entries(failedServers)
+          .map(([name, msg]) => `${name}: ${msg}`)
+          .join(', ');
+        throw new McpConnectionError(
+          `MCP server connection failed: ${details}`
+        );
+      }
+      return { mcpClientManager, tools: [] };
     }
 
-    try {
-      await mcpClientManager.connect();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new McpConnectionError(`MCP server connection failed: ${message}`);
+    mcpClientManager.setTransports(transports);
+    const connectErrors = await mcpClientManager.connectWithPartialFailure();
+
+    // Map transport-index errors back to server names
+    for (const [idx, msg] of Object.entries(connectErrors)) {
+      const name = serverNames[Number(idx)];
+      failedServers[name] = msg;
     }
 
     if (Object.keys(failedServers).length > 0) {
-      // Clean up successfully connected servers before throwing
-      await mcpClientManager.close();
-      const details = Object.entries(failedServers)
-        .map(([name, msg]) => `${name}: ${msg}`)
-        .join(', ');
-      throw new McpConnectionError(`MCP server connection failed: ${details}`);
+      logger.warn(
+        'Some MCP servers failed to connect, continuing with others',
+        { failedServers }
+      );
     }
 
     const allTools = await mcpClientManager.getTools();

@@ -42,6 +42,7 @@ export function StringListEditor({
             placeholder={placeholder}
             value={item}
             onChange={e => handleChange(index, e.target.value)}
+            data-testid="settings-mcp-dialog-string-list-input"
           />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -50,6 +51,7 @@ export function StringListEditor({
                 variant="ghost"
                 size="icon"
                 onClick={() => handleRemove(index)}
+                data-testid="settings-mcp-dialog-string-list-delete-button"
               >
                 <Trash2 className="size-4 text-destructive" />
               </Button>
@@ -58,7 +60,13 @@ export function StringListEditor({
           </Tooltip>
         </div>
       ))}
-      <Button type="button" variant="outline" size="sm" onClick={handleAdd}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleAdd}
+        data-testid="settings-mcp-dialog-string-list-add-button"
+      >
         <Plus className="size-4 mr-1" />
         {t('settings_mcp_add_entry')}
       </Button>

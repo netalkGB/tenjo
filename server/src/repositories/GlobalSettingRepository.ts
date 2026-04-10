@@ -42,6 +42,8 @@ export interface UserSettings {
   activeModelId?: string;
   language?: string;
   theme?: string;
+  selectedKnowledgeIds?: string[];
+  disabledMcpTools?: string[];
 }
 
 interface GlobalSettingRow {

@@ -39,6 +39,7 @@ export function ChatHistoryItem({
   const navigate = useNavigate();
   const { id: currentThreadId } = useParams<{ id: string }>();
   const [menuOpen, setMenuOpen] = useState(false);
+  const testIdPrefix = `sidebar-${pinned ? 'pinned' : 'history'}-item`;
 
   if (skeleton) {
     return <Skeleton className="h-7 w-full" />;
@@ -134,7 +135,10 @@ export function ChatHistoryItem({
   };
 
   return (
-    <SidebarMenuSubItem className="group/item">
+    <SidebarMenuSubItem
+      className="group/item"
+      data-testid={`${testIdPrefix}-${id}`}
+    >
       {/* Chat link with right padding to make room for the menu button */}
       <SidebarMenuSubButton asChild className="pr-8">
         <Link to={`/chat/${id}`} className="overflow-hidden">
@@ -144,20 +148,33 @@ export function ChatHistoryItem({
       {/* Three-dot menu button (horizontal dots) - shown on hover */}
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <button className="absolute right-0 top-0 bottom-0 w-6 opacity-0 group-hover/item:opacity-50 hover:opacity-100 hover:bg-accent rounded-md flex flex-row items-center justify-center gap-0.5">
+          <button
+            className="absolute right-0 top-0 bottom-0 w-6 opacity-0 group-hover/item:opacity-50 hover:opacity-100 hover:bg-accent rounded-md flex flex-row items-center justify-center gap-0.5"
+            data-testid={`${testIdPrefix}-menu-button-${id}`}
+          >
             <div className="size-0.5 bg-current rounded-full" />
             <div className="size-0.5 bg-current rounded-full" />
             <div className="size-0.5 bg-current rounded-full" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="right" align="start">
-          <DropdownMenuItem onClick={handlePin}>
+          <DropdownMenuItem
+            onClick={handlePin}
+            data-testid={`${testIdPrefix}-pin-menu-item-${id}`}
+          >
             {pinned ? t('unpin') : t('pin')}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleRename}>
+          <DropdownMenuItem
+            onClick={handleRename}
+            data-testid={`${testIdPrefix}-rename-menu-item-${id}`}
+          >
             {t('rename')}
           </DropdownMenuItem>
-          <DropdownMenuItem className="text-destructive" onClick={handleDelete}>
+          <DropdownMenuItem
+            className="text-destructive"
+            onClick={handleDelete}
+            data-testid={`${testIdPrefix}-delete-menu-item-${id}`}
+          >
             {t('delete')}
           </DropdownMenuItem>
         </DropdownMenuContent>

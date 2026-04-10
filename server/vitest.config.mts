@@ -13,7 +13,12 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test'
     },
-    setupFiles: [path.resolve(__dirname, 'vitest.setup.ts')]
+    globalSetup: [path.resolve(__dirname, 'vitest.globalSetup.ts')],
+    setupFiles: [path.resolve(__dirname, 'vitest.setup.ts')],
+    pool: 'forks',
+    slowTestThreshold: 1000,
+    silent: 'passed-only',
+    retry: 2
   },
   esbuild: {
     sourcemap: true

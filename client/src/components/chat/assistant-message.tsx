@@ -8,14 +8,14 @@ interface AssistantMessageProps {
 export function AssistantMessage({ children }: AssistantMessageProps) {
   if (typeof children !== 'string') {
     return (
-      <div>
+      <div data-testid="assistant-message-content">
         <div>{children}</div>
       </div>
     );
   }
 
   return (
-    <div>
+    <div data-testid="assistant-message-content">
       <div>
         <MarkdownRenderer markdown={children} />
       </div>

@@ -53,12 +53,14 @@ export function KeyValueEditor({
             placeholder={keyPlaceholder ?? t('settings_mcp_key')}
             value={entry.key}
             onChange={e => handleChange(index, 'key', e.target.value)}
+            data-testid="settings-mcp-dialog-key-value-key-input"
           />
           <Input
             className="flex-1"
             placeholder={valuePlaceholder ?? t('settings_mcp_value')}
             value={entry.value}
             onChange={e => handleChange(index, 'value', e.target.value)}
+            data-testid="settings-mcp-dialog-key-value-value-input"
           />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -67,6 +69,7 @@ export function KeyValueEditor({
                 variant="ghost"
                 size="icon"
                 onClick={() => handleRemove(index)}
+                data-testid="settings-mcp-dialog-key-value-delete-button"
               >
                 <Trash2 className="size-4 text-destructive" />
               </Button>
@@ -75,7 +78,13 @@ export function KeyValueEditor({
           </Tooltip>
         </div>
       ))}
-      <Button type="button" variant="outline" size="sm" onClick={handleAdd}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleAdd}
+        data-testid="settings-mcp-dialog-key-value-add-button"
+      >
         <Plus className="size-4 mr-1" />
         {t('settings_mcp_add_entry')}
       </Button>

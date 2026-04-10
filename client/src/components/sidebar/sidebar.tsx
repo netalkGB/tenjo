@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Settings as SettingsIcon } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen } from 'lucide-react';
 import {
   Sidebar as SidebarRoot,
   SidebarContent,
@@ -19,13 +19,34 @@ import { PinnedSection } from './pinned-section';
 import { HistorySection } from './history-section';
 import { UserProfile } from './user-profile';
 
+function KnowledgeButton() {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        className="cursor-pointer"
+        onClick={() => navigate('/knowledge')}
+        data-testid="sidebar-knowledge-button"
+      >
+        <BookOpen className="size-4" />
+        <span>{t('knowledge')}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
 function SettingsButton() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <SidebarMenuButton size="lg" onClick={() => navigate('/settings')}>
+        <SidebarMenuButton
+          size="lg"
+          onClick={() => navigate('/settings')}
+          data-testid="sidebar-settings-button"
+        >
           <SettingsIcon className="size-4" />
           <div className="grid flex-1 text-left text-sm leading-tight">
             <span className="truncate font-semibold">{t('settings')}</span>
@@ -39,7 +60,7 @@ function SettingsButton() {
 export function Sidebar() {
   const { singleUserMode } = useUser();
   return (
-    <SidebarRoot>
+    <SidebarRoot data-testid="sidebar">
       <SidebarHeader>
         <SidebarLogo />
       </SidebarHeader>
@@ -48,6 +69,7 @@ export function Sidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <NewChatButton />
+              <KnowledgeButton />
               <PinnedSection />
               <HistorySection />
             </SidebarMenu>

@@ -16,10 +16,10 @@ import {
   updatePreferences,
   type Model
 } from '@/api/server/settings';
+import { getKnowledgeList, type Knowledge } from '@/api/server/knowledge';
 import { type LocaleMode, LOCALE_MODES, changeLocale } from '@/i18n/config';
 import { type ThemeMode, THEME_MODES, applyTheme } from '@/lib/themeManager';
 import { useDialog } from '@/hooks/useDialog';
-import { McpToolStorage } from '@/lib/McpToolStorage';
 
 interface SettingsContextValue {
   models: Model[];
@@ -28,13 +28,19 @@ interface SettingsContextValue {
   setActiveModelId: (id: string) => void;
   reloadModels: () => Promise<void>;
   availableToolsByServer: Record<string, string[]>;
+  mcpToolErrors: Record<string, string>;
   enabledTools: Set<string>;
   isToolsLoaded: boolean;
   toggleTool: (toolName: string) => void;
   toggleServerTools: (serverName: string) => void;
   enableAllTools: () => void;
   disableAllTools: () => void;
-  reloadTools: () => Promise<void>;
+  reloadTools: (refetchMcpTools?: boolean) => Promise<void>;
+  knowledgeList: Knowledge[];
+  isKnowledgeLoaded: boolean;
+  reloadKnowledge: () => Promise<void>;
+  selectedKnowledge: Set<string>;
+  toggleKnowledge: (id: string) => void;
   localeMode: LocaleMode;
   themeMode: ThemeMode;
   updateLocaleMode: (mode: LocaleMode) => void;
@@ -53,7 +59,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     Record<string, string[]>
   >({});
   const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
+  const [mcpToolErrors, setMcpToolErrors] = useState<Record<string, string>>(
+    {}
+  );
   const [isToolsLoaded, setIsToolsLoaded] = useState(false);
+  const [knowledgeList, setKnowledgeList] = useState<Knowledge[]>([]);
+  const [isKnowledgeLoaded, setIsKnowledgeLoaded] = useState(false);
+  const [selectedKnowledge, setSelectedKnowledge] = useState<Set<string>>(
+    new Set()
+  );
   const [localeMode, setLocaleMode] = useState<LocaleMode>('auto');
   const [themeMode, setThemeModeState] = useState<ThemeMode>('auto');
 
@@ -103,6 +117,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           applyTheme(mode);
           setThemeModeState(mode);
         }
+
+        if (
+          prefs.selectedKnowledgeIds &&
+          prefs.selectedKnowledgeIds.length > 0
+        ) {
+          setSelectedKnowledge(new Set(prefs.selectedKnowledgeIds));
+        }
       } catch {
         // Preferences are non-critical; fall back to OS/browser defaults
       }
@@ -124,12 +145,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return () => query.removeEventListener('change', handler);
   }, []);
 
-  const reloadTools = async () => {
+  const cachedToolsResponse = useRef<Awaited<
+    ReturnType<typeof getMcpTools>
+  > | null>(null);
+
+  const reloadTools = async (refetchMcpTools = false) => {
     try {
-      const [res, rulesRes] = await Promise.all([
-        getMcpTools(),
-        getToolApprovalRules()
+      const needsFetch = refetchMcpTools || !cachedToolsResponse.current;
+      const [res, rulesRes, prefs] = await Promise.all([
+        needsFetch
+          ? getMcpTools()
+          : Promise.resolve(cachedToolsResponse.current!),
+        getToolApprovalRules(),
+        getPreferences()
       ]);
+      cachedToolsResponse.current = res;
+      setMcpToolErrors(res.errors ?? {});
 
       // Filter out banned tools
       const bannedSet = new Set(
@@ -146,8 +177,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setAvailableToolsByServer(filteredTools);
       const allTools = Object.values(filteredTools).flat();
 
-      const disabledSet = McpToolStorage.load(allTools);
-      if (disabledSet) {
+      const disabled = prefs.disabledMcpTools;
+      if (disabled && disabled.length > 0) {
+        const disabledSet = new Set(disabled);
         setEnabledTools(new Set(allTools.filter(t => !disabledSet.has(t))));
       } else {
         setEnabledTools(new Set(allTools));
@@ -170,12 +202,49 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     reloadTools();
   });
 
+  const reloadKnowledge = async () => {
+    try {
+      const list = await getKnowledgeList();
+      setKnowledgeList(list);
+
+      // Remove selected IDs that no longer exist
+      const validIds = new Set(list.map(k => k.id));
+      setSelectedKnowledge(prev => {
+        const next = new Set([...prev].filter(id => validIds.has(id)));
+        if (next.size !== prev.size) {
+          updatePreferences({ selectedKnowledgeIds: [...next] }).catch(
+            () => {}
+          );
+        }
+        return next;
+      });
+    } catch {
+      // Knowledge is non-critical; silently fail
+    } finally {
+      setIsKnowledgeLoaded(true);
+    }
+  };
+
+  const knowledgeInitialized = useRef(false);
+  useEffect(() => {
+    if (knowledgeInitialized.current) return;
+    knowledgeInitialized.current = true;
+    reloadKnowledge();
+  });
+
   const persistDisabledTools = (
     enabled: Set<string>,
     allToolsByServer: Record<string, string[]>
   ) => {
     const allTools = Object.values(allToolsByServer).flat();
-    McpToolStorage.save(enabled, allTools);
+    const disabledMcpTools = allTools.filter(t => !enabled.has(t));
+    updatePreferences({ disabledMcpTools }).catch(() => {
+      openDialog({
+        title: t('error'),
+        description: t('error_save_preferences'),
+        type: 'ok'
+      });
+    });
   };
 
   const toggleTool = (toolName: string) => {
@@ -218,6 +287,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const disableAllTools = () => {
     setEnabledTools(new Set());
     persistDisabledTools(new Set(), availableToolsByServer);
+  };
+
+  const toggleKnowledge = (id: string) => {
+    setSelectedKnowledge(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      updatePreferences({ selectedKnowledgeIds: [...next] }).catch(() => {
+        openDialog({
+          title: t('error'),
+          description: t('error_save_preferences'),
+          type: 'ok'
+        });
+      });
+      return next;
+    });
   };
 
   const updateLocaleMode = (mode: LocaleMode) => {
@@ -264,6 +349,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setActiveModelId,
         reloadModels,
         availableToolsByServer,
+        mcpToolErrors,
         enabledTools,
         isToolsLoaded,
         toggleTool,
@@ -271,6 +357,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         enableAllTools,
         disableAllTools,
         reloadTools,
+        knowledgeList,
+        isKnowledgeLoaded,
+        reloadKnowledge,
+        selectedKnowledge,
+        toggleKnowledge,
         localeMode,
         themeMode,
         updateLocaleMode,

@@ -114,6 +114,7 @@ export function ModelSettings() {
               size="sm"
               onClick={() => setIsAddDialogOpen(true)}
               disabled={!isLoaded}
+              data-testid="settings-model-add-button"
             >
               <Plus className="size-4 mr-1" />
               {t('settings_add_model')}
@@ -136,6 +137,7 @@ export function ModelSettings() {
               <div
                 key={model.id}
                 className="flex items-center justify-between border rounded-lg p-4"
+                data-testid={`settings-model-item-${model.id}`}
               >
                 <div className="space-y-1 min-w-0 flex-1">
                   <div className="font-medium">{model.model}</div>
@@ -160,6 +162,7 @@ export function ModelSettings() {
                         size="icon"
                         onClick={() => handleDelete(model.id)}
                         className="ml-2"
+                        data-testid={`settings-model-delete-button-${model.id}`}
                       >
                         <Trash2 className="size-4" />
                       </Button>

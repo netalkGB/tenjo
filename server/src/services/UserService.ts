@@ -177,20 +177,30 @@ export class UserService {
     });
   }
 
-  async getUserPreferences(
-    userId: string
-  ): Promise<{ language?: string; theme?: string }> {
+  async getUserPreferences(userId: string): Promise<{
+    language?: string;
+    theme?: string;
+    selectedKnowledgeIds?: string[];
+    disabledMcpTools?: string[];
+  }> {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new UserNotFoundError();
     return {
       language: user.settings?.language,
-      theme: user.settings?.theme
+      theme: user.settings?.theme,
+      selectedKnowledgeIds: user.settings?.selectedKnowledgeIds,
+      disabledMcpTools: user.settings?.disabledMcpTools
     };
   }
 
   async updateUserPreferences(
     userId: string,
-    preferences: { language?: string; theme?: string }
+    preferences: {
+      language?: string;
+      theme?: string;
+      selectedKnowledgeIds?: string[];
+      disabledMcpTools?: string[];
+    }
   ): Promise<void> {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new UserNotFoundError();
@@ -202,6 +212,12 @@ export class UserService {
     }
     if (preferences.theme !== undefined) {
       merged.theme = preferences.theme;
+    }
+    if (preferences.selectedKnowledgeIds !== undefined) {
+      merged.selectedKnowledgeIds = preferences.selectedKnowledgeIds;
+    }
+    if (preferences.disabledMcpTools !== undefined) {
+      merged.disabledMcpTools = preferences.disabledMcpTools;
     }
 
     await this.userRepo.update(userId, { settings: merged });

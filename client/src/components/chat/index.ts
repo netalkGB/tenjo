@@ -12,6 +12,7 @@ export { ChatSkeleton } from './chat-skeleton';
 export { ToolCallSection, ToolCallItem } from './tool-call-section';
 export type { ToolCallInfo } from './tool-call-section';
 export { ToolPicker } from './tool-picker';
+export { KnowledgePicker } from './knowledge-picker';
 export { ImagePreviewDialog } from './image-preview-dialog';
 export { ThinkingBlock } from './thinking-block';
 export { ChatTitleHeader } from './chat-title-header';

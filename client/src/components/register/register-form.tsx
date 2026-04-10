@@ -110,14 +110,19 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
       <div className={cn('flex flex-col gap-6', className)} {...props}>
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-xl">{t('register')}</CardTitle>
+            <CardTitle className="text-xl" data-testid="register-card-title">
+              {t('register')}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit}>
               <FieldGroup>
                 {needsInvitationCode && (
                   <Field>
-                    <FieldLabel htmlFor="invitationCode">
+                    <FieldLabel
+                      htmlFor="invitationCode"
+                      data-testid="register-invitation-code-label"
+                    >
                       {t('register_invitation_code')}
                     </FieldLabel>
                     <Input
@@ -125,6 +130,7 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                       name="invitationCode"
                       type="text"
                       required
+                      data-testid="register-invitation-code-input"
                     />
                   </Field>
                 )}
@@ -137,6 +143,7 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                     name="fullName"
                     type="text"
                     maxLength={FULL_NAME_MAX_LENGTH}
+                    data-testid="register-full-name-input"
                   />
                 </Field>
                 <Field data-invalid={!!userNameError || undefined}>
@@ -149,6 +156,7 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                     type="text"
                     ref={userNameInputRef}
                     maxLength={USER_NAME_MAX_LENGTH}
+                    data-testid="register-user-name-input"
                     required
                     pattern="[a-zA-Z0-9]+"
                     aria-invalid={!!userNameError || undefined}
@@ -163,6 +171,7 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                     type="email"
                     maxLength={EMAIL_MAX_LENGTH}
                     required
+                    data-testid="register-email-input"
                   />
                 </Field>
                 <Field data-invalid={passwordErrors.length > 0 || undefined}>
@@ -176,6 +185,7 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                     maxLength={PASSWORD_MAX_LENGTH}
                     required
                     aria-invalid={passwordErrors.length > 0 || undefined}
+                    data-testid="register-password-input"
                   />
                   {passwordErrors.length > 0 && (
                     <FieldError>
@@ -198,12 +208,17 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                     maxLength={PASSWORD_MAX_LENGTH}
                     required
                     aria-invalid={!!confirmError || undefined}
+                    data-testid="register-password-confirm-input"
                   />
                   {confirmError && <FieldError>{confirmError}</FieldError>}
                 </Field>
                 {serverError && <FieldError>{serverError}</FieldError>}
                 <Field>
-                  <Button type="submit" disabled={isRegistering}>
+                  <Button
+                    type="submit"
+                    disabled={isRegistering}
+                    data-testid="register-submit-button"
+                  >
                     {isRegistering ? t('registering') : t('register')}
                   </Button>
                 </Field>
@@ -213,6 +228,7 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
               <Link
                 to="/login"
                 className="text-primary underline underline-offset-4 hover:opacity-80"
+                data-testid="register-back-to-login-link"
               >
                 {t('register_back_to_login')}
               </Link>

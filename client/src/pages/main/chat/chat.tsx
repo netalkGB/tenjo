@@ -55,16 +55,20 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   const {
     messages: initialMessages,
     title: initialTitle,
-    pinned: initialPinned
+    pinned: initialPinned,
+    isGenerating: initialIsGenerating
   } = use(dataPromise);
   const location = useLocation();
   const { reload } = useHistory();
-  const { activeModelId, enabledTools } = useSettings();
+  const { activeModelId, enabledTools, selectedKnowledge, toggleKnowledge } =
+    useSettings();
   const { openDialog } = useDialog();
   const { t } = useTranslation();
   const [{ messages }, dispatch] = useReducer(chatReducer, initialChatState);
   const [chatTitle, setChatTitle] = useState<string>(initialTitle);
   const [chatPinned, setChatPinned] = useState<boolean>(initialPinned);
+  const [isGeneratingLocked, setIsGeneratingLocked] =
+    useState(initialIsGenerating);
   const hasProcessedInitialMessage = useRef(false);
   const [first, setFirst] = useState<boolean>(true);
   const [chatStatus, setChatStatus] = useState<ChatStatus>(null);
@@ -72,6 +76,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isStreaming = messages.some(msg => msg.isStreaming);
+  const isLocked = isStreaming || isGeneratingLocked;
 
   function handleStopStreaming() {
     abortControllerRef.current?.abort();
@@ -88,13 +93,14 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     });
     setChatTitle(initialTitle);
     setChatPinned(initialPinned);
+    setIsGeneratingLocked(initialIsGenerating);
     hasProcessedInitialMessage.current = false;
 
     // Scroll to the top when the thread changes.
     setTimeout(() => {
       virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'auto' });
     }, 100);
-  }, [initialMessages, initialTitle, initialPinned]);
+  }, [initialMessages, initialTitle, initialPinned, initialIsGenerating]);
 
   // Function to update branch info (only for specified message IDs).
   async function updateBranchStatusForMessages(
@@ -201,7 +207,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     const message = messages.find(msg => msg.id === messageId);
     if (!message || message.type !== 'user') return;
 
-    handleEditMessage(messageId, message.content);
+    handleEditMessage(messageId, message.content, message.imageUrls);
   }
 
   async function handleRetryAssistantMessage(messageId: string) {
@@ -222,7 +228,11 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     handleRetryUserMessage(parentMessage.id);
   }
 
-  async function handleEditMessage(messageId: string, editedMessage: string) {
+  async function handleEditMessage(
+    messageId: string,
+    editedMessage: string,
+    imageUrls?: string[]
+  ) {
     // Find the index of the message to be edited.
     const editedMessageIndex = messages.findIndex(msg => msg.id === messageId);
     if (editedMessageIndex === -1) return;
@@ -240,6 +250,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
       payload: {
         editIndex: editedMessageIndex,
         editedMessage,
+        imageUrls,
         parentMessageId: editedMessage_parentId
       }
     });
@@ -286,6 +297,9 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           onProcessing: () => {
             setChatStatus('processing');
           },
+          onAnalyzingImages: () => {
+            setChatStatus('analyzingImages');
+          },
           onComplete: (
             _title?: string,
             userMessageId?: string,
@@ -315,7 +329,9 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           }
         },
         activeModelId || undefined,
-        [...enabledTools]
+        [...enabledTools],
+        imageUrls,
+        selectedKnowledge.size > 0 ? [...selectedKnowledge] : undefined
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -388,6 +404,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   }
 
   async function handleSendMessage(message: string, imageUrls: string[] = []) {
+    const knowledgeIds = [...selectedKnowledge];
     // Get the ID of the last confirmed message (used as parentMessageId).
     const lastCompletedMessage = messages
       .slice()
@@ -448,6 +465,9 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           onProcessing: () => {
             setChatStatus('processing');
           },
+          onAnalyzingImages: () => {
+            setChatStatus('analyzingImages');
+          },
           onGeneratingTitle: () => {
             setChatStatus('generatingTitle');
           },
@@ -477,7 +497,8 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         },
         activeModelId || undefined,
         [...enabledTools],
-        imageUrls.length > 0 ? imageUrls : undefined
+        imageUrls.length > 0 ? imageUrls : undefined,
+        knowledgeIds.length > 0 ? knowledgeIds : undefined
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -535,10 +556,14 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                   imageUrls={message.imageUrls}
                   currentCount={message.currentCount ?? 1}
                   totalCount={message.totalCount ?? 1}
-                  isStreaming={isStreaming}
+                  isStreaming={isLocked}
                   onSave={(editedMessage: string) => {
                     if (message.id) {
-                      handleEditMessage(message.id, editedMessage);
+                      handleEditMessage(
+                        message.id,
+                        editedMessage,
+                        message.imageUrls
+                      );
                     }
                   }}
                   onRetry={() => {
@@ -579,7 +604,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                         providerType={message.provider}
                         currentCount={parentMessage?.currentCount ?? 1}
                         totalCount={parentMessage?.totalCount ?? 1}
-                        isStreaming={isStreaming || message.isStreaming}
+                        isStreaming={isLocked || message.isStreaming}
                         contentParts={message.contentParts}
                         toolCalls={message.toolCalls?.map(tc =>
                           tc.status === 'pendingApproval'
@@ -629,8 +654,11 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           <div className="p-6 w-[85%] mx-auto">
             <ChatInput
               onSendMessage={handleSendMessage}
-              isStreaming={isStreaming}
+              isStreaming={isLocked}
+              isGeneratingLocked={isGeneratingLocked && !isStreaming}
               onStop={handleStopStreaming}
+              selectedKnowledge={selectedKnowledge}
+              onToggleKnowledge={toggleKnowledge}
             />
           </div>
         </div>

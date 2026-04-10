@@ -27,10 +27,19 @@ export function RenameDialogFooter({
 
   return (
     <div className="flex gap-2 w-full justify-end">
-      <Button variant="outline" onClick={onCancel} disabled={isSaving}>
+      <Button
+        variant="outline"
+        onClick={onCancel}
+        disabled={isSaving}
+        data-testid="rename-dialog-cancel-button"
+      >
         {t('cancel')}
       </Button>
-      <Button onClick={handleSave} disabled={isDisabled || isSaving}>
+      <Button
+        onClick={handleSave}
+        disabled={isDisabled || isSaving}
+        data-testid="rename-dialog-save-button"
+      >
         {isSaving ? t('saving') : t('save')}
       </Button>
     </div>

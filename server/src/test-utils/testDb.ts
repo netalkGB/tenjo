@@ -24,7 +24,7 @@ export class TestDatabaseHelper {
 
     this.pool = new Pool({
       connectionString: this.config.url,
-      options: `-c search_path=${this.fullSchemaName}`
+      options: `-c search_path=${this.fullSchemaName},public`
     });
 
     return this.pool;

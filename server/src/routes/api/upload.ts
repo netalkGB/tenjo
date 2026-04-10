@@ -4,16 +4,14 @@ import { requireCsrfToken } from '../../middleware/csrf';
 import { requireAuth } from '../../middleware/auth';
 import { typedHandler } from '../../types/api';
 import {
-  ImageService,
   ImageNotFoundError,
   ImageValidationError,
   type UploadResult
 } from '../../services/ImageService';
+import { imageService } from '../../services/registry';
 import { HttpError } from '../../errors/HttpError';
 
 export const uploadRouter = express.Router();
-
-const imageService = new ImageService();
 
 // Max file size: 10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;

@@ -423,6 +423,156 @@ describe('MessageRepository (Integration Tests)', () => {
     });
   });
 
+  describe('getImageFilenamesByThreadId', () => {
+    it('should return empty array when no messages have images', async () => {
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: { content: [{ type: 'text', text: 'hello' }] },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      const filenames =
+        await messageRepository.getImageFilenamesByThreadId(testThreadId);
+      expect(filenames).toEqual([]);
+    });
+
+    it('should extract image filenames from messages', async () => {
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: {
+          content: [
+            { type: 'text', text: 'hello' },
+            {
+              type: 'image_url',
+              image_url: { url: '/api/upload/artifacts/img1.jpg' }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: {
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: '/api/upload/artifacts/img2.png' }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      const filenames =
+        await messageRepository.getImageFilenamesByThreadId(testThreadId);
+      expect(filenames.sort()).toEqual(['img1.jpg', 'img2.png']);
+    });
+
+    it('should return distinct filenames even if same image is referenced multiple times', async () => {
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: {
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: '/api/upload/artifacts/same.jpg' }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: {
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: '/api/upload/artifacts/same.jpg' }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      const filenames =
+        await messageRepository.getImageFilenamesByThreadId(testThreadId);
+      expect(filenames).toEqual(['same.jpg']);
+    });
+
+    it('should only return filenames for the specified thread', async () => {
+      const otherThread = await threadRepository.create({
+        title: 'Other Thread',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: {
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: '/api/upload/artifacts/thread1.jpg' }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+      await messageRepository.create({
+        thread_id: otherThread!.id,
+        parent_message_id: null,
+        data: {
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: '/api/upload/artifacts/thread2.jpg' }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      const filenames =
+        await messageRepository.getImageFilenamesByThreadId(testThreadId);
+      expect(filenames).toEqual(['thread1.jpg']);
+    });
+
+    it('should return empty array when data content is not an array', async () => {
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: { content: 'plain text' },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      const filenames =
+        await messageRepository.getImageFilenamesByThreadId(testThreadId);
+      expect(filenames).toEqual([]);
+    });
+  });
+
   describe('findPath', () => {
     const createDummyRecords = async (
       messageIds: string[],

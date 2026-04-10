@@ -65,26 +65,42 @@ export function CustomDialog({
         <DialogFooter>
           {type === 'cancel/ok' && (
             <>
-              <Button variant="outline" onClick={onCancel}>
+              <Button
+                variant="outline"
+                onClick={onCancel}
+                data-testid="dialog-cancel-button"
+              >
                 {cancelText}
               </Button>
-              <Button type="submit" onClick={onOk}>
+              <Button
+                type="submit"
+                onClick={onOk}
+                data-testid="dialog-ok-button"
+              >
                 {okText}
               </Button>
             </>
           )}
           {type === 'ok/cancel' && (
             <>
-              <Button type="submit" onClick={onOk}>
+              <Button
+                type="submit"
+                onClick={onOk}
+                data-testid="dialog-ok-button"
+              >
                 {okText}
               </Button>
-              <Button variant="outline" onClick={onCancel}>
+              <Button
+                variant="outline"
+                onClick={onCancel}
+                data-testid="dialog-cancel-button"
+              >
                 {cancelText}
               </Button>
             </>
           )}
           {type === 'ok' && (
-            <Button type="submit" onClick={onOk}>
+            <Button type="submit" onClick={onOk} data-testid="dialog-ok-button">
               {okText}
             </Button>
           )}

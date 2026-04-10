@@ -8,7 +8,7 @@ export function NewChatButton() {
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild>
+      <SidebarMenuButton asChild data-testid="sidebar-new-chat-button">
         <Link to="/">
           <SquarePlus />
           <span>{t('new_chat')}</span>

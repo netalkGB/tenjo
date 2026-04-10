@@ -7,6 +7,8 @@ import { InvitationCodeRepository } from './InvitationCodeRepository';
 import { ToolApprovalRuleRepository } from './ToolApprovalRuleRepository';
 import { CredentialStoreRepository } from './CredentialStoreRepository';
 import { PendingOAuthFlowRepository } from './PendingOAuthFlowRepository';
+import { KnowledgeRepository } from './KnowledgeRepository';
+import { ImageAnalysisCacheRepository } from './ImageAnalysisCacheRepository';
 
 export const threadRepo = new ThreadRepository(pool);
 export const messageRepo = new MessageRepository(pool);
@@ -16,3 +18,5 @@ export const invitationCodeRepo = new InvitationCodeRepository(pool);
 export const toolApprovalRuleRepo = new ToolApprovalRuleRepository(pool);
 export const credentialStoreRepo = new CredentialStoreRepository(pool);
 export const pendingOAuthFlowRepo = new PendingOAuthFlowRepository(pool);
+export const knowledgeRepo = new KnowledgeRepository(pool);
+export const imageAnalysisCacheRepo = new ImageAnalysisCacheRepository(pool);

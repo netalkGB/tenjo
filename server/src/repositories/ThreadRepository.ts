@@ -9,6 +9,7 @@ export interface Thread {
   updated_by: string | null;
   created_at: Date | null;
   updated_at: Date | null;
+  generating_since: Date | null;
 }
 
 export interface InsertThread {
@@ -20,6 +21,7 @@ export interface InsertThread {
   updated_by?: string | null;
   created_at?: Date | null;
   updated_at?: Date | null;
+  generating_since?: Date | null;
 }
 
 export type UpdateThread = Partial<InsertThread>;
@@ -39,7 +41,8 @@ const COLUMNS = [
   'created_by',
   'updated_by',
   'created_at',
-  'updated_at'
+  'updated_at',
+  'generating_since'
 ] as const;
 
 export class ThreadRepository extends BaseRepository {
@@ -159,5 +162,27 @@ export class ThreadRepository extends BaseRepository {
       currentPage: pageNumber,
       totalCount
     };
+  }
+
+  async setGeneratingSince(id: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE "threads" SET "generating_since" = now() WHERE "id" = $1`,
+      [id]
+    );
+  }
+
+  async clearGeneratingSince(id: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE "threads" SET "generating_since" = NULL WHERE "id" = $1`,
+      [id]
+    );
+  }
+
+  async isGenerating(id: string, timeoutMinutes: number): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM "threads" WHERE "id" = $1 AND "generating_since" IS NOT NULL AND "generating_since" > now() - $2::interval`,
+      [id, `${timeoutMinutes} minutes`]
+    );
+    return result.rows.length > 0;
   }
 }

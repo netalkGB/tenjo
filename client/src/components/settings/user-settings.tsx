@@ -228,6 +228,7 @@ export function UserSettings() {
                   value={userSearchQuery}
                   onChange={e => setUserSearchQuery(e.target.value)}
                   className="pl-9"
+                  data-testid="settings-users-search-input"
                 />
               </div>
 
@@ -247,7 +248,10 @@ export function UserSettings() {
                   </TableHeader>
                   <TableBody>
                     {filteredUsers.map(user => (
-                      <TableRow key={user.id}>
+                      <TableRow
+                        key={user.id}
+                        data-testid={`settings-users-row-${user.id}`}
+                      >
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {user.fullName || (
@@ -273,6 +277,7 @@ export function UserSettings() {
                                 onClick={() =>
                                   handleDeleteUser(user.id, user.userName)
                                 }
+                                data-testid={`settings-users-delete-button-${user.id}`}
                               >
                                 <Trash2 className="size-4" />
                               </Button>
@@ -298,14 +303,23 @@ export function UserSettings() {
               value={newCodeRole}
               onValueChange={v => setNewCodeRole(v as UserRole)}
             >
-              <SelectTrigger className="w-32">
+              <SelectTrigger
+                className="w-32"
+                data-testid="settings-invitation-role-select"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">
+                <SelectItem
+                  value="admin"
+                  data-testid="settings-invitation-role-option-admin"
+                >
                   {t('settings_role_admin')}
                 </SelectItem>
-                <SelectItem value="standard">
+                <SelectItem
+                  value="standard"
+                  data-testid="settings-invitation-role-option-standard"
+                >
                   {t('settings_role_standard')}
                 </SelectItem>
               </SelectContent>
@@ -315,6 +329,7 @@ export function UserSettings() {
               size="sm"
               onClick={handleCreateInvitationCode}
               disabled={!invitationCodesLoaded}
+              data-testid="settings-invitation-generate-button"
             >
               <Plus className="size-4 mr-1" />
               {t('settings_invitation_generate')}
@@ -335,9 +350,15 @@ export function UserSettings() {
               <div
                 key={code.id}
                 className="flex items-center justify-between border rounded-lg p-4"
+                data-testid={`settings-invitation-item-${code.id}`}
               >
                 <div className="space-y-1 min-w-0 flex-1">
-                  <div className="font-mono text-sm truncate">{code.code}</div>
+                  <div
+                    className="font-mono text-sm truncate"
+                    data-testid={`settings-invitation-code-text-${code.id}`}
+                  >
+                    {code.code}
+                  </div>
                   <div className="text-sm text-muted-foreground flex items-center gap-2">
                     <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
                       {code.userRole === 'admin'
@@ -345,7 +366,10 @@ export function UserSettings() {
                         : t('settings_role_standard')}
                     </span>
                     {code.used && (
-                      <span className="inline-flex items-center rounded-md bg-destructive/10 text-destructive px-2 py-0.5 text-xs font-medium">
+                      <span
+                        className="inline-flex items-center rounded-md bg-destructive/10 text-destructive px-2 py-0.5 text-xs font-medium"
+                        data-testid={`settings-invitation-used-badge-${code.id}`}
+                      >
                         {t('settings_invitation_used')}
                       </span>
                     )}
@@ -359,6 +383,7 @@ export function UserSettings() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleCopyCode(code.code, code.id)}
+                          data-testid={`settings-invitation-copy-button-${code.id}`}
                         >
                           {copiedCodeId === code.id ? (
                             <Check className="size-4" />
@@ -376,6 +401,7 @@ export function UserSettings() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDeleteInvitationCode(code.id)}
+                        data-testid={`settings-invitation-delete-button-${code.id}`}
                       >
                         <Trash2 className="size-4" />
                       </Button>

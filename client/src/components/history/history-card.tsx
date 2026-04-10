@@ -44,7 +44,9 @@ export function HistoryCard({
   return (
     <Card className="px-4 py-3 mb-0 border-x-0 border-t-0 last:border-b-0 hover:bg-accent cursor-pointer group">
       <div className="flex items-center justify-between relative">
-        <h3 className="text-sm font-medium">{title}</h3>
+        <h3 className="text-sm font-medium" data-testid="history-card-title">
+          {title}
+        </h3>
         <span className="text-sm text-muted-foreground block group-hover:invisible">
           {date}
         </span>
@@ -55,6 +57,7 @@ export function HistoryCard({
                 variant="ghost"
                 className="cursor-pointer h-5 w-5 p-0 hover:bg-slate-200 dark:hover:bg-slate-700 items-center justify-center shrink-0"
                 onClick={onTogglePin}
+                data-testid="history-card-pin-button"
               >
                 {pinned ? (
                   <PinOff className="w-3.5 h-3.5" />
@@ -73,6 +76,7 @@ export function HistoryCard({
                 variant="ghost"
                 className="cursor-pointer h-5 w-5 p-0 hover:bg-slate-200 dark:hover:bg-slate-700 items-center justify-center shrink-0"
                 onClick={onRename}
+                data-testid="history-card-rename-button"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </Button>
@@ -87,6 +91,7 @@ export function HistoryCard({
                 variant="ghost"
                 className="cursor-pointer h-5 w-5 p-0 hover:bg-slate-200 dark:hover:bg-slate-700 items-center justify-center shrink-0"
                 onClick={onDelete}
+                data-testid="history-card-delete-button"
               >
                 <Trash className="w-3.5 h-3.5" />
               </Button>

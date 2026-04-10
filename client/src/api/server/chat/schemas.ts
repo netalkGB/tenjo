@@ -5,7 +5,8 @@ export const NewChatRequestSchema = z.object({
   parentMessageId: z.string().optional(),
   modelId: z.string().optional(),
   enabledTools: z.array(z.string()).optional(),
-  imageUrls: z.array(z.string()).optional()
+  imageUrls: z.array(z.string()).optional(),
+  knowledgeIds: z.array(z.string()).optional()
 });
 
 export const ToolCallEventSchema = z.object({
@@ -26,6 +27,7 @@ export const SSEChunkSchema = z.object({
   done: z.boolean().optional(),
   generatingTitle: z.boolean().optional(),
   processing: z.boolean().optional(),
+  analyzingImages: z.boolean().optional(),
   threadId: z.string().optional(),
   title: z.string().optional(),
   userMessageId: z.string().optional(),
@@ -133,7 +135,8 @@ export const ThreadMessageSchema = z.object({
 export const ThreadMessagesResponseSchema = z.object({
   messages: z.array(ThreadMessageSchema),
   title: z.string(),
-  pinned: z.boolean()
+  pinned: z.boolean(),
+  isGenerating: z.boolean()
 });
 
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;
@@ -160,6 +163,7 @@ export interface SendMessageCallbacks {
   onReasoning?: (chunk: string) => void;
   onGeneratingTitle?: () => void;
   onProcessing?: () => void;
+  onAnalyzingImages?: () => void;
   onComplete?: (
     title?: string,
     userMessageId?: string,

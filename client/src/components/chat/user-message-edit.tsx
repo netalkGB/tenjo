@@ -28,15 +28,25 @@ export function UserMessageEdit({
           className="bg-background text-foreground"
           value={value}
           onChange={e => setValue(e.target.value)}
+          data-testid="user-message-edit-textarea"
         />
         <div className="flex justify-end mt-3">
           <div className="ml-2">
-            <Button variant="outline" onClick={onCancel}>
+            <Button
+              variant="outline"
+              onClick={onCancel}
+              data-testid="user-message-edit-cancel-button"
+            >
               {t('cancel')}
             </Button>
           </div>
           <div className="ml-2">
-            <Button onClick={handleSave}>{t('save')}</Button>
+            <Button
+              onClick={handleSave}
+              data-testid="user-message-edit-save-button"
+            >
+              {t('save')}
+            </Button>
           </div>
         </div>
       </div>

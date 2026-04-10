@@ -17,6 +17,13 @@ export { LocalChatApiClient } from './LocalChatApiClient';
 export { LmStudioChatApiClient } from './LmStudioChatApiClient';
 export { OllamaChatApiClient } from './OllamaChatApiClient';
 export { McpClientManager } from './McpClientManager';
+export {
+  ImageAnalysisProcessor,
+} from './ImageAnalysisProcessor';
+export {
+  type ImageAnalysisProvider,
+  type ImageUrlResolver,
+} from './ImageAnalysisProvider';
 export { McpOAuthClientProvider, type OAuthContext } from './McpOAuthClientProvider';
 export {
   type StdioMcpServerConfig,

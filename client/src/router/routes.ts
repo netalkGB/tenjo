@@ -40,6 +40,13 @@ export const routes = createBrowserRouter([
         }
       },
       {
+        path: '/knowledge',
+        lazy: async () => {
+          const { Knowledge } = await import('@/pages/main/knowledge');
+          return { Component: Knowledge };
+        }
+      },
+      {
         path: '/chat',
         children: [
           {

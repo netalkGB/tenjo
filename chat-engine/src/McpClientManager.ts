@@ -33,6 +33,44 @@ export class McpClientManager {
     }
   }
 
+  /**
+   * Connects transports individually, skipping those that fail.
+   * Returns error messages keyed by transport index for failed connections.
+   */
+  public async connectWithPartialFailure(): Promise<Record<number, string>> {
+    const errors: Record<number, string> = {};
+    const connectedTransports: Transport[] = [];
+
+    for (let i = 0; i < this.transports.length; i++) {
+      const transport = this.transports[i];
+      const client = new Client(
+        {
+          name: this.mcpClientName,
+          version: this.mcpClientVersion,
+        },
+        {
+          capabilities: {},
+        }
+      );
+      try {
+        await client.connect(transport);
+        this.clients.push(client);
+        connectedTransports.push(transport);
+      } catch (error) {
+        errors[i] = error instanceof Error ? error.message : String(error);
+        // Clean up the failed transport
+        try {
+          await transport.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
+    }
+
+    this.transports = connectedTransports;
+    return errors;
+  }
+
   public async getTools(): Promise<ToolDefinitionRequest[]> {
     const allTools: ToolDefinitionRequest[] = [];
     for (const client of this.clients) {

@@ -85,6 +85,10 @@ async function processSSEStream(
           callbacks.onProcessing();
         }
 
+        if (validated.analyzingImages && callbacks.onAnalyzingImages) {
+          callbacks.onAnalyzingImages();
+        }
+
         if (validated.done && callbacks.onComplete) {
           callbacks.onComplete(
             validated.title,
@@ -120,10 +124,19 @@ export async function editAndResendMessage(
   message: string,
   callbacks: SendMessageCallbacks,
   modelId?: string,
-  enabledTools?: string[]
+  enabledTools?: string[],
+  imageUrls?: string[],
+  knowledgeIds?: string[]
 ): Promise<void> {
   try {
-    const requestData = { message, modelId, enabledTools };
+    const requestData = {
+      message,
+      modelId,
+      enabledTools,
+      imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined,
+      knowledgeIds:
+        knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined
+    };
 
     const response = await fetch(
       `/api/chat/threads/${threadId}/messages/${messageId}/edit`,
@@ -156,7 +169,8 @@ export async function sendMessageToThread(
   callbacks: SendMessageCallbacks,
   modelId?: string,
   enabledTools?: string[],
-  imageUrls?: string[]
+  imageUrls?: string[],
+  knowledgeIds?: string[]
 ): Promise<void> {
   try {
     const requestData = NewChatRequestSchema.parse({
@@ -164,7 +178,9 @@ export async function sendMessageToThread(
       parentMessageId,
       modelId,
       enabledTools,
-      imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined
+      imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined,
+      knowledgeIds:
+        knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined
     });
 
     const response = await fetch(`/api/chat/threads/${threadId}/messages`, {

@@ -27,7 +27,12 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
   }, [content]);
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mb-3">
+    <Collapsible
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className="mb-3"
+      data-testid="thinking-block"
+    >
       <div className="border-l-2 border-muted-foreground/30 pl-3">
         <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           <ChevronRight

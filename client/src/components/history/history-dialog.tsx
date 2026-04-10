@@ -296,6 +296,7 @@ export function HistoryDialog({ isOpen, onClose }: HistoryDialogProps) {
                 value={searchQuery}
                 onChange={handleSearch}
                 className="pl-9 h-11"
+                data-testid="history-dialog-search-input"
               />
             </div>
           </div>
@@ -323,6 +324,7 @@ export function HistoryDialog({ isOpen, onClose }: HistoryDialogProps) {
                 <div
                   key={thread.id}
                   onClick={() => handleThreadClick(thread.id)}
+                  data-testid={`history-dialog-item-${thread.id}`}
                 >
                   <HistoryCard
                     title={thread.title || t('untitled') || 'Untitled'}

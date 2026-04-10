@@ -35,7 +35,11 @@ export function AssistantMessageActions({
         <div className="mr-0.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" onClick={onRetry}>
+              <Button
+                variant="ghost"
+                onClick={onRetry}
+                data-testid="assistant-message-retry-button"
+              >
                 <RotateCw />
               </Button>
             </TooltipTrigger>
@@ -47,7 +51,11 @@ export function AssistantMessageActions({
         <div className="mr-0.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" onClick={onCopy}>
+              <Button
+                variant="ghost"
+                onClick={onCopy}
+                data-testid="assistant-message-copy-button"
+              >
                 <Copy />
               </Button>
             </TooltipTrigger>
@@ -59,17 +67,28 @@ export function AssistantMessageActions({
         {showPagination && (
           <>
             <div className="mr-0.5">
-              <Button variant="ghost" onClick={onPrevious}>
+              <Button
+                variant="ghost"
+                onClick={onPrevious}
+                data-testid="assistant-message-branch-prev-button"
+              >
                 <ChevronLeft />
               </Button>
             </div>
-            <div className="mr-0.5 flex items-center justify-center">
+            <div
+              className="mr-0.5 flex items-center justify-center"
+              data-testid="assistant-message-branch-count"
+            >
               <p>
                 {currentCount}/{totalCount}
               </p>
             </div>
             <div className="mr-0.5">
-              <Button variant="ghost" onClick={onNext}>
+              <Button
+                variant="ghost"
+                onClick={onNext}
+                data-testid="assistant-message-branch-next-button"
+              >
                 <ChevronRight />
               </Button>
             </div>

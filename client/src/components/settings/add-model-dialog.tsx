@@ -160,7 +160,7 @@ export function AddModelDialog({
                 setForm(prev => ({ ...prev, type: value }))
               }
             >
-              <SelectTrigger>
+              <SelectTrigger data-testid="settings-model-add-provider-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -179,6 +179,7 @@ export function AddModelDialog({
               }
               value={form.baseUrl}
               onChange={e => handleBaseUrlChange(e.target.value)}
+              data-testid="settings-model-add-base-url-input"
             />
           </div>
           <div className="space-y-2">
@@ -188,6 +189,7 @@ export function AddModelDialog({
               placeholder={t('settings_token_placeholder')}
               value={form.token}
               onChange={e => handleTokenChange(e.target.value)}
+              data-testid="settings-model-add-token-input"
             />
           </div>
           <div className="space-y-2">
@@ -205,6 +207,7 @@ export function AddModelDialog({
                     role="combobox"
                     aria-expanded={comboboxOpen}
                     className="w-full justify-between font-normal"
+                    data-testid="settings-model-add-model-name-combobox"
                   >
                     <span className="truncate">
                       {form.model || t('settings_select_model_placeholder')}
@@ -265,6 +268,7 @@ export function AddModelDialog({
                 onChange={e =>
                   setForm(prev => ({ ...prev, model: e.target.value }))
                 }
+                data-testid="settings-model-add-model-name-input"
               />
             )}
             {modelsFetched && availableModels.length > 0 && (
@@ -275,6 +279,7 @@ export function AddModelDialog({
                   setModelsFetched(false);
                   setAvailableModels([]);
                 }}
+                data-testid="settings-model-add-enter-manually-button"
               >
                 {t('settings_enter_manually')}
               </button>
@@ -287,7 +292,11 @@ export function AddModelDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button
+            variant="outline"
+            onClick={handleClose}
+            data-testid="settings-model-add-cancel-button"
+          >
             {t('cancel')}
           </Button>
           <Button
@@ -295,6 +304,7 @@ export function AddModelDialog({
             disabled={
               !form.baseUrl || !form.model || isSubmitting || isDuplicate
             }
+            data-testid="settings-model-add-submit-button"
           >
             {isSubmitting
               ? t('settings_adding_model')

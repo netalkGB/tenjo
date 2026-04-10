@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
   ChatClient,
@@ -13,15 +12,11 @@ import type {
 import type { ThreadRepository } from '../repositories/ThreadRepository';
 import type { ToolApprovalRuleRepository } from '../repositories/ToolApprovalRuleRepository';
 import type { ModelConfig } from '../repositories/GlobalSettingRepository';
+import type { FileUploadService } from './FileUploadService';
 import { toolApprovalEmitter } from './ToolApprovalEmitter';
 import { createChatClient } from '../factories/chatClientFactory';
 import { ServiceError } from '../errors/ServiceError';
-import { getDataDir } from '../utils/env';
 import logger from '../logger';
-
-function getArtifactsDir(): string {
-  return path.join(getDataDir(), 'artifacts');
-}
 
 function extractTextContent(
   content:
@@ -39,50 +34,10 @@ function extractTextContent(
   return textContent?.text ?? '';
 }
 
-function stripImagesFromMessage(message: MessageRequest): MessageRequest {
-  if (Array.isArray(message.content)) {
-    const textContent = message.content
-      .filter((c) => c.type === 'text')
-      .map((c) => (c.type === 'text' ? c.text : ''))
-      .join('');
-    return { ...message, content: textContent || '' } as MessageRequest;
-  }
-  return message;
-}
-
 const EXTENSION_TO_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.png': 'image/png'
 };
-
-async function resolveImageUrlsToDataUri(urls: string[]): Promise<string[]> {
-  return Promise.all(
-    urls.map(async (url) => {
-      logger.debug('Resolving image URL:', url);
-      const match = url.match(/^\/api\/upload\/artifacts\/([^/]+\.(jpg|png))$/);
-      if (!match) {
-        logger.debug('Not a local artifact URL, returning as-is');
-        return url;
-      }
-
-      const filename = path.basename(match[1]);
-      const filePath = path.join(getArtifactsDir(), filename);
-      logger.debug('Reading file from:', filePath);
-      try {
-        const fileData = await fs.readFile(filePath);
-        const ext = path.extname(filename).toLowerCase();
-        const mimeType = EXTENSION_TO_MIME[ext] ?? 'application/octet-stream';
-        const base64 = fileData.toString('base64');
-        const dataUri = `data:${mimeType};base64,${base64}`;
-        logger.debug('Converted to data URI, length:', dataUri.length);
-        return dataUri;
-      } catch (error) {
-        logger.error('Failed to read file:', error);
-        return url;
-      }
-    })
-  );
-}
 
 export class MessageNotFoundError extends ServiceError {
   constructor(message: string = 'Message not found') {
@@ -141,8 +96,37 @@ export class MessageService {
   constructor(
     private messageRepo: MessageRepository,
     private threadRepo: ThreadRepository,
-    private toolApprovalRuleRepo: ToolApprovalRuleRepository
+    private toolApprovalRuleRepo: ToolApprovalRuleRepository,
+    private fileUploadService: FileUploadService
   ) {}
+
+  async resolveImageUrlToDataUri(url: string): Promise<string> {
+    logger.debug('Resolving image URL:', url);
+    const match = url.match(/^\/api\/upload\/artifacts\/([^/]+\.(jpg|png))$/);
+    if (!match) {
+      logger.debug('Not a local artifact URL, returning as-is');
+      return url;
+    }
+
+    const filename = path.basename(match[1]);
+    logger.debug('Reading file:', filename);
+    try {
+      const fileData = await this.fileUploadService.read(filename);
+      const ext = path.extname(filename).toLowerCase();
+      const mimeType = EXTENSION_TO_MIME[ext] ?? 'application/octet-stream';
+      const base64 = fileData.toString('base64');
+      const dataUri = `data:${mimeType};base64,${base64}`;
+      logger.debug('Converted to data URI, length:', dataUri.length);
+      return dataUri;
+    } catch (error) {
+      logger.error('Failed to read file:', error);
+      return url;
+    }
+  }
+
+  private async resolveImageUrlsToDataUri(urls: string[]): Promise<string[]> {
+    return Promise.all(urls.map((url) => this.resolveImageUrlToDataUri(url)));
+  }
 
   async verifyMessageExists(messageId: string): Promise<Message> {
     const message = await this.messageRepo.findById(messageId);
@@ -243,7 +227,8 @@ export class MessageService {
     const messagePath = await this.messageRepo.findPath(messageId);
     return messagePath
       .filter((msg) => msg.data)
-      .map((msg) => stripImagesFromMessage(msg.data as MessageRequest));
+      .map((msg) => msg.data as MessageRequest)
+      .filter((msg) => msg.role !== 'system');
   }
 
   async getUserPrompt(messageId: string): Promise<string> {
@@ -279,7 +264,7 @@ export class MessageService {
     }
 
     try {
-      const chatClient = createChatClient(modelConfig);
+      const chatClient = createChatClient({ config: modelConfig });
       chatClient.setSystemPrompt({
         role: 'system',
         content: [
@@ -451,7 +436,8 @@ export class MessageService {
     try {
       const sendOptions = { signal: abortController.signal };
       if (imageUrls && imageUrls.length > 0) {
-        const resolvedImageUrls = await resolveImageUrlsToDataUri(imageUrls);
+        const resolvedImageUrls =
+          await this.resolveImageUrlsToDataUri(imageUrls);
         for (let i = 0; i < imageUrls.length; i++) {
           dataUriToOriginalUrl.set(resolvedImageUrls[i], imageUrls[i]);
         }

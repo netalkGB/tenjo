@@ -144,5 +144,46 @@ export const migrations: Migration[] = [
 
       CREATE INDEX IF NOT EXISTS "pending_oauth_flows_created_at_idx" ON "pending_oauth_flows" USING btree ("created_at");
     `
+  },
+  {
+    version: 8,
+    name: 'add_knowledge',
+    up: `
+      CREATE TABLE "knowledge" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "name" varchar(255) NOT NULL,
+        "display_path" varchar(255) NOT NULL,
+        "fs_path" varchar(1000) NOT NULL,
+        "created_by" uuid,
+        "updated_by" uuid,
+        "created_at" timestamp DEFAULT now(),
+        "updated_at" timestamp DEFAULT now()
+      );
+      CREATE INDEX "knowledge_created_by_idx" ON "knowledge" USING btree ("created_by");
+      CREATE INDEX "knowledge_name_idx" ON "knowledge" USING btree ("name");
+      CREATE INDEX "knowledge_fs_path_idx" ON "knowledge" USING btree ("fs_path");
+    `
+  },
+  {
+    version: 9,
+    name: 'add_image_analysis_cache',
+    up: `
+      CREATE TABLE "image_analysis_cache" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "image_path" varchar(500) NOT NULL,
+        "model" varchar(150) NOT NULL,
+        "description" text NOT NULL,
+        "thread_id" uuid NOT NULL,
+        "created_at" timestamp DEFAULT now(),
+        "updated_at" timestamp DEFAULT now()
+      );
+      CREATE INDEX "image_analysis_cache_image_path_idx" ON "image_analysis_cache" USING btree ("image_path");
+      CREATE INDEX "image_analysis_cache_thread_id_idx" ON "image_analysis_cache" USING btree ("thread_id");
+    `
+  },
+  {
+    version: 10,
+    name: 'add_generating_since_to_threads',
+    up: `ALTER TABLE "threads" ADD COLUMN "generating_since" timestamp;`
   }
 ];

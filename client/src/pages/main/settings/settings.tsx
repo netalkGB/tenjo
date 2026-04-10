@@ -96,7 +96,11 @@ export function Settings() {
 
   return (
     <MainLayout
-      header={<span className="text-sm">{t('settings')}</span>}
+      header={
+        <span className="text-sm" data-testid="settings-title">
+          {t('settings')}
+        </span>
+      }
       content={
         <div className="flex h-full">
           <nav className="w-64 shrink-0 border-r">
@@ -110,6 +114,7 @@ export function Settings() {
                     variant={isActive ? 'secondary' : 'ghost'}
                     className="justify-start gap-2"
                     onClick={() => navigate(`/settings/${category}`)}
+                    data-testid={`settings-nav-${category}`}
                   >
                     <Icon className="size-4" />
                     {t(categoryI18nKeys[category])}

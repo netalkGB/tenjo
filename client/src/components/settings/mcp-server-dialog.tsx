@@ -333,6 +333,7 @@ export function McpServerDialog({
               value={name}
               onChange={e => setName(e.target.value)}
               disabled={isEditing}
+              data-testid="settings-mcp-dialog-name-input"
             />
             {isDuplicateName && (
               <p className="text-sm text-destructive">
@@ -347,7 +348,7 @@ export function McpServerDialog({
               value={transportType}
               onValueChange={value => setTransportType(value as TransportType)}
             >
-              <SelectTrigger>
+              <SelectTrigger data-testid="settings-mcp-dialog-transport-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -371,6 +372,7 @@ export function McpServerDialog({
                 <Input
                   value={command}
                   onChange={e => setCommand(e.target.value)}
+                  data-testid="settings-mcp-dialog-command-input"
                 />
               </div>
 
@@ -394,6 +396,7 @@ export function McpServerDialog({
                   placeholder={t('settings_mcp_url_placeholder')}
                   value={url}
                   onChange={e => setUrl(e.target.value)}
+                  data-testid="settings-mcp-dialog-url-input"
                 />
               </div>
 
@@ -417,6 +420,7 @@ export function McpServerDialog({
                   placeholder={t('settings_mcp_url_placeholder')}
                   value={url}
                   onChange={e => setUrl(e.target.value)}
+                  data-testid="settings-mcp-dialog-oauth-url-input"
                 />
               </div>
 
@@ -447,6 +451,7 @@ export function McpServerDialog({
                       )}
                       value={clientId}
                       onChange={e => setClientId(e.target.value)}
+                      data-testid="settings-mcp-dialog-oauth-client-id-input"
                     />
                   </div>
 
@@ -459,6 +464,7 @@ export function McpServerDialog({
                       )}
                       value={clientSecret}
                       onChange={e => setClientSecret(e.target.value)}
+                      data-testid="settings-mcp-dialog-oauth-client-secret-input"
                     />
                   </div>
                 </CollapsibleContent>
@@ -467,15 +473,27 @@ export function McpServerDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button
+            variant="outline"
+            onClick={handleClose}
+            data-testid="settings-mcp-dialog-cancel-button"
+          >
             {t('cancel')}
           </Button>
           {transportType === 'oauth-http' ? (
-            <Button onClick={handleOAuthNext} disabled={!isConfigValid}>
+            <Button
+              onClick={handleOAuthNext}
+              disabled={!isConfigValid}
+              data-testid="settings-mcp-dialog-next-button"
+            >
               {t('next')}
             </Button>
           ) : (
-            <Button onClick={handleSave} disabled={!isConfigValid}>
+            <Button
+              onClick={handleSave}
+              disabled={!isConfigValid}
+              data-testid="settings-mcp-dialog-save-button"
+            >
               {isEditing ? t('save') : t('settings_mcp_add_server')}
             </Button>
           )}

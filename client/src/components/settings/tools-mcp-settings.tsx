@@ -141,9 +141,10 @@ export function ToolsMcpSettings() {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'mcp-oauth-success') {
         setReauthorizingServer(undefined);
+        setMcpToolsLoaded(false);
         loadMcpServers();
         loadMcpTools();
-        reloadTools();
+        reloadTools(true);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -208,7 +209,7 @@ export function ToolsMcpSettings() {
     try {
       const response = await updateMcpServers(next);
       setMcpToolsByServer(response.tools);
-      await reloadTools();
+      await reloadTools(true);
     } catch (error) {
       setMcpServers(prev);
       const detail =
@@ -250,7 +251,7 @@ export function ToolsMcpSettings() {
         try {
           const response = await updateMcpServers(next);
           setMcpToolsByServer(response.tools);
-          await reloadTools();
+          await reloadTools(true);
         } catch (error) {
           setMcpServers(prev);
           const detail =
@@ -284,11 +285,22 @@ export function ToolsMcpSettings() {
         clientId: config.clientId || undefined,
         clientSecret: config.clientSecret || undefined
       });
-      window.open(
+      const popup = window.open(
         response.authorizationUrl,
         'mcp-oauth',
         'width=600,height=700,menubar=no,toolbar=no'
       );
+      // Monitor popup — reset state if user closes it without completing OAuth
+      if (popup) {
+        const timer = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(timer);
+            setReauthorizingServer(current =>
+              current === name ? undefined : current
+            );
+          }
+        }, 500);
+      }
     } catch {
       setReauthorizingServer(undefined);
       openDialog({
@@ -378,6 +390,7 @@ export function ToolsMcpSettings() {
                 setIsMcpDialogOpen(true);
               }}
               disabled={!mcpServersLoaded}
+              data-testid="settings-mcp-add-server-button"
             >
               <Plus className="size-4 mr-1" />
               {t('settings_mcp_add_server')}
@@ -402,11 +415,14 @@ export function ToolsMcpSettings() {
               const isUnauthorized =
                 isOAuth && (!config.authorized || hasConnectionError);
               const isReauthorizing = reauthorizingServer === name;
+              const isCheckingConnection =
+                !mcpToolsLoaded && !isReauthorizing && !isUnauthorized;
 
               return (
                 <div
                   key={name}
                   className="flex items-center justify-between border rounded-lg p-4"
+                  data-testid="settings-mcp-server-item"
                 >
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -421,6 +437,12 @@ export function ToolsMcpSettings() {
                         <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                           <Loader2 className="size-3 animate-spin" />
                           {t('settings_mcp_oauth_waiting')}
+                        </span>
+                      )}
+                      {isCheckingConnection && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          <Loader2 className="size-3 animate-spin" />
+                          {t('settings_mcp_checking_connection')}
                         </span>
                       )}
                     </div>
@@ -445,6 +467,7 @@ export function ToolsMcpSettings() {
                               size="icon"
                               onClick={() => handleReauthorize(name, config)}
                               disabled={isReauthorizing}
+                              data-testid="settings-mcp-server-reauthorize-button"
                             >
                               <KeyRound className="size-4" />
                             </Button>
@@ -461,6 +484,7 @@ export function ToolsMcpSettings() {
                               variant="ghost"
                               size="icon"
                               onClick={() => handleEditMcpServer(name)}
+                              data-testid="settings-mcp-server-edit-button"
                             >
                               <Pencil className="size-4" />
                             </Button>
@@ -474,6 +498,7 @@ export function ToolsMcpSettings() {
                             variant="ghost"
                             size="icon"
                             onClick={() => handleDeleteMcpServer(name)}
+                            data-testid="settings-mcp-server-delete-button"
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -503,7 +528,7 @@ export function ToolsMcpSettings() {
             setEditingServerConfig(undefined);
             loadMcpServers();
             loadMcpTools();
-            reloadTools();
+            reloadTools(true);
           }}
           initialName={editingServerName}
           initialConfig={editingServerConfig}
@@ -531,7 +556,11 @@ export function ToolsMcpSettings() {
             toolServerEntries.map(([serverName, tools]) => {
               if (tools.length === 0) return null;
               return (
-                <div key={serverName} className="space-y-2">
+                <div
+                  key={serverName}
+                  className="space-y-2"
+                  data-testid="settings-mcp-tool-approval-server"
+                >
                   <div className="flex items-center justify-between px-1">
                     <span className="text-sm font-medium text-muted-foreground">
                       {serverName}
@@ -547,6 +576,7 @@ export function ToolsMcpSettings() {
                             'auto_approve'
                           )
                         }
+                        data-testid="settings-mcp-tool-approval-server-approve-button"
                       >
                         {t('tools_all_approve_on')}
                       </Button>
@@ -557,6 +587,7 @@ export function ToolsMcpSettings() {
                         onClick={() =>
                           handleSetServerApprovalState(serverName, 'manual')
                         }
+                        data-testid="settings-mcp-tool-approval-server-manual-button"
                       >
                         {t('tools_all_manual')}
                       </Button>
@@ -567,6 +598,7 @@ export function ToolsMcpSettings() {
                         onClick={() =>
                           handleSetServerApprovalState(serverName, 'banned')
                         }
+                        data-testid="settings-mcp-tool-approval-server-banned-button"
                       >
                         {t('tools_all_banned')}
                       </Button>
@@ -583,6 +615,7 @@ export function ToolsMcpSettings() {
                       <div
                         key={tool}
                         className="flex items-center justify-between border rounded-md p-3"
+                        data-testid="settings-mcp-tool-approval-item"
                       >
                         <span className="text-sm font-mono">{tool}</span>
                         <div className="flex gap-2">
@@ -597,6 +630,7 @@ export function ToolsMcpSettings() {
                               handleSetToolApprovalState(tool, 'auto_approve')
                             }
                             disabled={approveState === 'auto_approve'}
+                            data-testid="settings-mcp-tool-approval-approve-button"
                           >
                             {t('settings_auto_approve_on')}
                           </Button>
@@ -609,6 +643,7 @@ export function ToolsMcpSettings() {
                               handleSetToolApprovalState(tool, 'manual')
                             }
                             disabled={approveState === 'manual'}
+                            data-testid="settings-mcp-tool-approval-manual-button"
                           >
                             {t('settings_auto_approve_off')}
                           </Button>
@@ -623,6 +658,7 @@ export function ToolsMcpSettings() {
                               handleSetToolApprovalState(tool, 'banned')
                             }
                             disabled={approveState === 'banned'}
+                            data-testid="settings-mcp-tool-approval-banned-button"
                           >
                             {t('settings_tool_banned')}
                           </Button>

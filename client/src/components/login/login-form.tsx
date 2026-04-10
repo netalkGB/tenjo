@@ -66,6 +66,7 @@ export const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(
                     type="text"
                     ref={idInputRef}
                     required
+                    data-testid="login-form-id-input"
                   />
                 </Field>
                 <Field>
@@ -78,10 +79,15 @@ export const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(
                     type="password"
                     required
                     ref={passwordInputRef}
+                    data-testid="login-form-password-input"
                   />
                 </Field>
                 <Field>
-                  <Button type="submit" disabled={isLoggingIn}>
+                  <Button
+                    type="submit"
+                    disabled={isLoggingIn}
+                    data-testid="login-form-submit-button"
+                  >
                     {isLoggingIn ? t('logging_in') : t('login')}
                   </Button>
                 </Field>
@@ -91,6 +97,7 @@ export const LoginForm = forwardRef<LoginFormRef, LoginFormProps>(
               <Link
                 to="/register"
                 className="text-primary underline underline-offset-4 hover:opacity-80"
+                data-testid="login-form-register-link"
               >
                 {t('register_link')}
               </Link>

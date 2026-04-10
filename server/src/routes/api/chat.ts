@@ -5,12 +5,16 @@ import { requireAuth } from '../../middleware/auth';
 import {
   threadRepo,
   messageRepo,
-  toolApprovalRuleRepo
+  toolApprovalRuleRepo,
+  imageAnalysisCacheRepo
 } from '../../repositories/registry';
 import {
   globalSettingService,
-  credentialStoreService
+  credentialStoreService,
+  knowledgeService,
+  fileUploadService
 } from '../../services/registry';
+import { createImageAnalysisProvider } from '../../services/ImageAnalysisCacheService';
 import {
   type ErrorResponse,
   type SessionUser,
@@ -18,9 +22,17 @@ import {
 } from '../../types/api';
 import { HttpError } from '../../errors/HttpError';
 import type { Thread } from '../../repositories/ThreadRepository';
+import type { ModelConfig } from '../../repositories/GlobalSettingRepository';
 import { McpToolService } from '../../services/McpToolService';
-import type { McpClientManager } from 'tenjo-chat-engine';
-import { createChatClient } from '../../factories/chatClientFactory';
+import {
+  type McpClientManager,
+  type MessageRequest,
+  ImageAnalysisProcessor
+} from 'tenjo-chat-engine';
+import {
+  createChatClient,
+  createChatApiClient
+} from '../../factories/chatClientFactory';
 import { toolApprovalEmitter } from '../../services/ToolApprovalEmitter';
 import {
   ThreadService,
@@ -52,12 +64,58 @@ function createStreamWriter(res: express.Response): StreamWriter {
 }
 
 const mcpToolService = new McpToolService(credentialStoreService);
-const threadService = new ThreadService(threadRepo, messageRepo);
+const threadService = new ThreadService(
+  threadRepo,
+  messageRepo,
+  fileUploadService,
+  imageAnalysisCacheRepo
+);
 const messageService = new MessageService(
   messageRepo,
   threadRepo,
-  toolApprovalRuleRepo
+  toolApprovalRuleRepo,
+  fileUploadService
 );
+
+/**
+ * Replaces past image content with cached/extracted text descriptions.
+ */
+async function analyzeContextImages(
+  contextMessages: MessageRequest[],
+  threadId: string,
+  modelConfig: ModelConfig,
+  res: express.Response
+): Promise<MessageRequest[]> {
+  const provider = createImageAnalysisProvider(
+    imageAnalysisCacheRepo,
+    threadId,
+    modelConfig.model
+  );
+  const processor = new ImageAnalysisProcessor(
+    provider,
+    () => createChatApiClient(modelConfig, []),
+    (url) => messageService.resolveImageUrlToDataUri(url),
+    (analyzing) => {
+      if (analyzing) {
+        res.write(`data: ${JSON.stringify({ analyzingImages: true })}\n\n`);
+      }
+    }
+  );
+  return processor.processContextMessages(contextMessages);
+}
+
+/**
+ * Fetches and formats knowledge content for the given IDs.
+ */
+async function resolveKnowledgeContent(
+  knowledgeIds: string[] | undefined,
+  userId: string
+): Promise<string | undefined> {
+  if (!knowledgeIds || knowledgeIds.length === 0) return undefined;
+  const entries = await knowledgeService.getContentsByIds(knowledgeIds, userId);
+  if (entries.length === 0) return undefined;
+  return entries.map((k) => `### ${k.name}\n${k.content}`).join('\n\n');
+}
 
 /*
  * Create a new thread without sending a message
@@ -101,6 +159,7 @@ interface SendMessageRequest {
     modelId?: string;
     enabledTools?: string[];
     imageUrls?: string[];
+    knowledgeIds?: string[];
   };
 }
 
@@ -122,6 +181,8 @@ chatRouter.post(
         sessionUser.id
       );
 
+      await threadService.acquireGeneratingLock(thread.id);
+
       const modelConfig = await globalSettingService.resolveModelConfig(
         body.modelId
       );
@@ -135,14 +196,31 @@ chatRouter.post(
       mcpClientManager = mcpManager;
 
       const tools = [...mcpTools];
-      const chatClient = createChatClient(modelConfig, tools);
 
-      if (body.parentMessageId) {
-        const contextMessages = await messageService.getContextMessages(
-          body.parentMessageId
+      const knowledgeContent = await resolveKnowledgeContent(
+        body.knowledgeIds,
+        sessionUser.id
+      );
+
+      let contextMessages = body.parentMessageId
+        ? await messageService.getContextMessages(body.parentMessageId)
+        : undefined;
+
+      if (contextMessages && contextMessages.length > 0) {
+        contextMessages = await analyzeContextImages(
+          contextMessages,
+          thread.id,
+          modelConfig,
+          res
         );
-        chatClient.setMessages(contextMessages);
       }
+
+      const chatClient = createChatClient({
+        config: modelConfig,
+        tools,
+        knowledgeContent,
+        contextMessages
+      });
 
       const shouldGenerateTitle = !body.parentMessageId;
 
@@ -187,6 +265,7 @@ chatRouter.post(
         res.end();
       }
     } finally {
+      await threadService.releaseGeneratingLock(threadId);
       mcpClientManager?.close();
     }
   })
@@ -202,6 +281,8 @@ interface EditMessageRequest {
     message: string;
     modelId?: string;
     enabledTools?: string[];
+    imageUrls?: string[];
+    knowledgeIds?: string[];
   };
 }
 
@@ -223,6 +304,8 @@ chatRouter.post(
 
     try {
       await threadService.verifyThreadOwnership(threadId, sessionUser.id);
+      await threadService.acquireGeneratingLock(threadId);
+
       const originalMessage =
         await messageService.verifyMessageExists(messageId);
 
@@ -239,18 +322,38 @@ chatRouter.post(
       mcpClientManager = mcpManager;
 
       const tools = [...mcpTools];
-      const chatClient = createChatClient(modelConfig, tools);
 
-      if (originalMessage.parent_message_id) {
-        const contextMessages = await messageService.getContextMessages(
-          originalMessage.parent_message_id
+      const knowledgeContent = await resolveKnowledgeContent(
+        body.knowledgeIds,
+        sessionUser.id
+      );
+
+      let contextMessages = originalMessage.parent_message_id
+        ? await messageService.getContextMessages(
+            originalMessage.parent_message_id
+          )
+        : undefined;
+
+      if (contextMessages && contextMessages.length > 0) {
+        contextMessages = await analyzeContextImages(
+          contextMessages,
+          threadId,
+          modelConfig,
+          res
         );
-        chatClient.setMessages(contextMessages);
       }
+
+      const chatClient = createChatClient({
+        config: modelConfig,
+        tools,
+        knowledgeContent,
+        contextMessages
+      });
 
       const result = await messageService.processMessageStream({
         threadId,
         message: body.message,
+        imageUrls: body.imageUrls,
         parentMessageId: originalMessage.parent_message_id,
         userId: sessionUser.id,
         mcpClientManager,
@@ -274,6 +377,7 @@ chatRouter.post(
         res.end();
       }
     } finally {
+      await threadService.releaseGeneratingLock(threadId);
       mcpClientManager?.close();
     }
   })
@@ -406,6 +510,7 @@ interface GetMessagesResponse {
   messages: ThreadMessage[];
   title: string;
   pinned: boolean;
+  isGenerating: boolean;
 }
 
 chatRouter.get(
@@ -427,7 +532,17 @@ chatRouter.get(
           thread.current_leaf_message_id
         );
 
-        res.json({ messages, title: thread.title, pinned: thread.pinned });
+        const isGenerating = await threadService.isGeneratingLocked(threadId);
+        logger.debug(
+          `[GET messages] threadId=${threadId} isGenerating=${isGenerating}`
+        );
+
+        res.json({
+          messages,
+          title: thread.title,
+          pinned: thread.pinned,
+          isGenerating
+        });
       } catch (err) {
         if (err instanceof ThreadNotFoundError) {
           throw new HttpError(StatusCodes.NOT_FOUND, err.message);
@@ -521,7 +636,12 @@ chatRouter.post(
           targetSiblingId
         );
 
-        res.json({ messages, title: thread.title, pinned: thread.pinned });
+        res.json({
+          messages,
+          title: thread.title,
+          pinned: thread.pinned,
+          isGenerating: await threadService.isGeneratingLocked(threadId)
+        });
       } catch (err) {
         if (err instanceof ThreadNotFoundError) {
           throw new HttpError(StatusCodes.NOT_FOUND, err.message);

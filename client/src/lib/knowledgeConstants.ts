@@ -1,0 +1,1 @@
+export const KNOWLEDGE_MAX_FILE_SIZE = 200 * 1024; // 200KB

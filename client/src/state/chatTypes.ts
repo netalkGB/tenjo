@@ -68,6 +68,7 @@ export type ChatAction =
       payload: {
         editIndex: number;
         editedMessage: string;
+        imageUrls?: string[];
         parentMessageId?: string | null;
       };
     }

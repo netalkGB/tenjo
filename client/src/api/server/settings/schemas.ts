@@ -207,7 +207,9 @@ export type UpdateMcpServersResponse = z.infer<
 
 export const UserPreferencesResponseSchema = z.object({
   language: z.string().optional(),
-  theme: z.string().optional()
+  theme: z.string().optional(),
+  selectedKnowledgeIds: z.array(z.string()).optional(),
+  disabledMcpTools: z.array(z.string()).optional()
 });
 
 export type UserPreferencesResponse = z.infer<
@@ -217,4 +219,21 @@ export type UserPreferencesResponse = z.infer<
 export interface UpdatePreferencesRequest {
   language?: string;
   theme?: string;
+  selectedKnowledgeIds?: string[];
+  disabledMcpTools?: string[];
 }
+
+// Cleanup
+
+export const CleanupStatusResponseSchema = z.object({
+  cleaning: z.boolean(),
+  totalSizeBytes: z.number()
+});
+
+export type CleanupStatusResponse = z.infer<typeof CleanupStatusResponseSchema>;
+
+export const StartCleanupResponseSchema = z.object({
+  success: z.boolean()
+});
+
+export type StartCleanupResponse = z.infer<typeof StartCleanupResponseSchema>;

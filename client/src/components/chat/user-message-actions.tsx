@@ -45,7 +45,11 @@ export function UserMessageActions({
         <div className="ml-0.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" onClick={onRetry}>
+              <Button
+                variant="ghost"
+                onClick={onRetry}
+                data-testid="user-message-retry-button"
+              >
                 <RotateCw />
               </Button>
             </TooltipTrigger>
@@ -57,7 +61,11 @@ export function UserMessageActions({
         <div className="ml-0.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" onClick={onEdit}>
+              <Button
+                variant="ghost"
+                onClick={onEdit}
+                data-testid="user-message-edit-button"
+              >
                 <Pencil />
               </Button>
             </TooltipTrigger>
@@ -69,7 +77,11 @@ export function UserMessageActions({
         <div className="ml-0.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" onClick={onCopy}>
+              <Button
+                variant="ghost"
+                onClick={onCopy}
+                data-testid="user-message-copy-button"
+              >
                 <Copy />
               </Button>
             </TooltipTrigger>
@@ -81,17 +93,28 @@ export function UserMessageActions({
         {showPagination && (
           <>
             <div className="ml-0.5">
-              <Button variant="ghost" onClick={onPrevious}>
+              <Button
+                variant="ghost"
+                onClick={onPrevious}
+                data-testid="user-message-branch-prev-button"
+              >
                 <ChevronLeft />
               </Button>
             </div>
-            <div className="ml-0.5 flex items-center justify-center">
+            <div
+              className="ml-0.5 flex items-center justify-center"
+              data-testid="user-message-branch-count"
+            >
               <p>
                 {currentCount}/{totalCount}
               </p>
             </div>
             <div className="ml-0.5">
-              <Button variant="ghost" onClick={onNext}>
+              <Button
+                variant="ghost"
+                onClick={onNext}
+                data-testid="user-message-branch-next-button"
+              >
                 <ChevronRight />
               </Button>
             </div>

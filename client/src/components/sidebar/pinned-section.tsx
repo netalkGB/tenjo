@@ -30,7 +30,7 @@ export function PinnedSection() {
       onOpenChange={isOpen => setPinnedOpen(isOpen)}
     >
       <SidebarMenuItem className="relative">
-        <SidebarMenuButton>
+        <SidebarMenuButton data-testid="sidebar-pinned-button">
           <Pin className="size-4" />
           <span>{t('pinned')}</span>
         </SidebarMenuButton>
@@ -38,6 +38,7 @@ export function PinnedSection() {
           <button
             className="absolute right-0 top-0 bottom-0 w-8 hover:bg-accent rounded-md flex items-center justify-center"
             onClick={e => e.stopPropagation()}
+            data-testid="sidebar-pinned-collapse-button"
           >
             <ChevronRight className="size-4 transition-transform group-data-[state=open]/pinned:rotate-90" />
           </button>

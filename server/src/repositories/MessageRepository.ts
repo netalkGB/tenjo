@@ -129,6 +129,36 @@ export class MessageRepository extends BaseRepository {
     return result.rows.length;
   }
 
+  /**
+   * Extract image filenames referenced in messages for a given thread.
+   * Parses the JSONB data column for image_url entries.
+   */
+  async getImageFilenamesByThreadId(threadId: string): Promise<string[]> {
+    const result = await this.pool.query<{ filename: string }>(
+      `
+      SELECT DISTINCT match[1] AS filename
+      FROM "messages",
+           LATERAL jsonb_array_elements(
+             CASE jsonb_typeof(data->'content')
+               WHEN 'array' THEN data->'content'
+               ELSE '[]'::jsonb
+             END
+           ) AS elem,
+           LATERAL (
+             SELECT regexp_match(
+               elem->'image_url'->>'url',
+               '/api/upload/artifacts/([^/]+)$'
+             ) AS match
+           ) AS m
+      WHERE "thread_id" = $1
+        AND elem->>'type' = 'image_url'
+        AND match IS NOT NULL
+      `,
+      [threadId]
+    );
+    return result.rows.map((row) => row.filename);
+  }
+
   async switchBranch(parentId: string, targetChildId: string): Promise<void> {
     await this.pool.query(
       `UPDATE "messages" SET "selected_child_id" = $1 WHERE "id" = $2`,

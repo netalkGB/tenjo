@@ -38,7 +38,8 @@ import {
 import {
   globalSettingService,
   credentialStoreService,
-  mcpOAuthService
+  mcpOAuthService,
+  fileCleanupService
 } from '../../services/registry';
 import {
   ModelNotFoundError,
@@ -547,9 +548,13 @@ settingsRouter.put(
     const { tools, errors } =
       await mcpToolService.validateAndGetToolsByServer(mcpServers);
 
-    const failedServers = Object.entries(errors);
-    if (failedServers.length > 0) {
-      const details = failedServers
+    // OAuth auth errors are non-fatal — the config is valid,
+    // it just needs re-authorization.
+    const fatalErrors = Object.entries(errors).filter(
+      ([name]) => mcpServers[name]?.type !== 'oauth-http'
+    );
+    if (fatalErrors.length > 0) {
+      const details = fatalErrors
         .map(([name, msg]) => `${name}: ${msg}`)
         .join('\n');
       throw new HttpError(StatusCodes.BAD_REQUEST, details);
@@ -936,6 +941,8 @@ settingsRouter.patch(
 interface GetPreferencesResponse {
   language?: string;
   theme?: string;
+  selectedKnowledgeIds?: string[];
+  disabledMcpTools?: string[];
 }
 
 settingsRouter.get(
@@ -956,7 +963,12 @@ settingsRouter.get(
  * Updates the user's language and theme preferences.
  */
 interface UpdatePreferencesRequest {
-  body: { language?: string; theme?: string };
+  body: {
+    language?: string;
+    theme?: string;
+    selectedKnowledgeIds?: string[];
+    disabledMcpTools?: string[];
+  };
 }
 
 interface UpdatePreferencesResponse {
@@ -972,13 +984,76 @@ settingsRouter.patch(
     UpdatePreferencesResponse | ErrorResponse
   >(async (req, res) => {
     const sessionUser = req.user as SessionUser;
-    const { language, theme } = req.body;
+    const { language, theme, selectedKnowledgeIds, disabledMcpTools } =
+      req.body;
     await userService.updateUserPreferences(sessionUser.id, {
       language,
-      theme
+      theme,
+      selectedKnowledgeIds,
+      disabledMcpTools
     });
     res.json({ success: true });
   })
+);
+
+// ---------------------------------------------------------------------------
+// File Cleanup
+// ---------------------------------------------------------------------------
+
+/*
+ * GET /api/settings/cleanup-status
+ * Returns the current cleanup status and total artifacts size (admin only).
+ */
+interface GetCleanupStatusResponse {
+  cleaning: boolean;
+  totalSizeBytes: number;
+}
+
+settingsRouter.get(
+  '/cleanup-status',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  async (
+    _req: express.Request,
+    res: express.Response<GetCleanupStatusResponse | ErrorResponse>
+  ) => {
+    const status = await fileCleanupService.getStatus();
+    res.json(status);
+  }
+);
+
+/*
+ * POST /api/settings/cleanup
+ * Starts a background file cleanup (admin only).
+ */
+interface StartCleanupResponse {
+  success: boolean;
+}
+
+settingsRouter.post(
+  '/cleanup',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  async (
+    req: express.Request,
+    res: express.Response<StartCleanupResponse | ErrorResponse>
+  ) => {
+    const sessionUser = req.user as SessionUser;
+
+    // Check if already cleaning
+    const status = await fileCleanupService.getStatus();
+    if (status.cleaning) {
+      throw new HttpError(
+        StatusCodes.CONFLICT,
+        'Cleanup is already in progress'
+      );
+    }
+
+    await fileCleanupService.startCleanup(sessionUser.id);
+    res.json({ success: true });
+  }
 );
 
 // ---------------------------------------------------------------------------

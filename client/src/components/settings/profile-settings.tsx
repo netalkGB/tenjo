@@ -251,6 +251,7 @@ export function ProfileSettings() {
                   value={profileFullName}
                   onChange={e => setProfileFullName(e.target.value)}
                   maxLength={FULL_NAME_MAX_LENGTH}
+                  data-testid="settings-profile-full-name-input"
                 />
               </div>
 
@@ -265,6 +266,7 @@ export function ProfileSettings() {
                   maxLength={USER_NAME_MAX_LENGTH}
                   required
                   pattern="[a-zA-Z0-9]+"
+                  data-testid="settings-profile-user-name-input"
                 />
               </div>
 
@@ -279,15 +281,19 @@ export function ProfileSettings() {
                   onChange={e => setProfileEmail(e.target.value)}
                   maxLength={EMAIL_MAX_LENGTH}
                   required
+                  data-testid="settings-profile-email-input"
                 />
               </div>
 
-              <FormMessageDisplay message={profileMessage} />
+              <div data-testid="settings-profile-message">
+                <FormMessageDisplay message={profileMessage} />
+              </div>
 
               <Button
                 onClick={handleSaveProfile}
                 disabled={profileSaving}
                 className="w-full"
+                data-testid="settings-profile-save-button"
               >
                 {profileSaving
                   ? t('settings_profile_saving')
@@ -314,6 +320,7 @@ export function ProfileSettings() {
               onChange={e => setCurrentPassword(e.target.value)}
               maxLength={PASSWORD_MAX_LENGTH}
               autoComplete="current-password"
+              data-testid="settings-profile-current-password-input"
             />
           </div>
 
@@ -328,6 +335,7 @@ export function ProfileSettings() {
               onChange={e => setNewPassword(e.target.value)}
               maxLength={PASSWORD_MAX_LENGTH}
               autoComplete="new-password"
+              data-testid="settings-profile-new-password-input"
             />
           </div>
 
@@ -342,15 +350,19 @@ export function ProfileSettings() {
               onChange={e => setConfirmPassword(e.target.value)}
               maxLength={PASSWORD_MAX_LENGTH}
               autoComplete="new-password"
+              data-testid="settings-profile-confirm-password-input"
             />
           </div>
 
-          <FormMessageDisplay message={passwordMessage} />
+          <div data-testid="settings-profile-message">
+            <FormMessageDisplay message={passwordMessage} />
+          </div>
 
           <Button
             onClick={handleSavePassword}
             disabled={passwordSaving}
             className="w-full"
+            data-testid="settings-profile-password-save-button"
           >
             {passwordSaving
               ? t('settings_password_saving')
