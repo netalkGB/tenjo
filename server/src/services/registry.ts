@@ -9,6 +9,7 @@ import { GlobalSettingService } from './GlobalSettingService';
 import { CredentialStoreService } from './CredentialStoreService';
 import { PendingOAuthFlowService } from './PendingOAuthFlowService';
 import { McpOAuthService } from './McpOAuthService';
+import { McpToolService } from './McpToolService';
 import { FileUploadService } from './FileUploadService';
 import { ImageService } from './ImageService';
 import { KnowledgeService } from './KnowledgeService';
@@ -30,6 +31,7 @@ export const mcpOAuthService = new McpOAuthService(
   credentialStoreService,
   pendingOAuthFlowService
 );
+export const mcpToolService = new McpToolService(credentialStoreService);
 export const fileUploadService = new FileUploadService();
 export const imageService = new ImageService(fileUploadService);
 export const knowledgeService = new KnowledgeService(

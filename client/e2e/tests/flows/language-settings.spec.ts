@@ -9,7 +9,14 @@ async function changeLanguage(
   const trigger = page.getByTestId('settings-general-language-select');
   await trigger.click();
   const option = page.getByTestId(`settings-general-language-option-${mode}`);
+  // Wait for the preferences PATCH to complete so the change is persisted
+  const preferencesResponse = page.waitForResponse(
+    (resp) =>
+      resp.url().includes('/api/settings/preferences') &&
+      resp.request().method() === 'PATCH'
+  );
   await option.click({ timeout: 5000 });
+  await preferencesResponse;
   // Wait for the dropdown to close (select trigger becomes idle again)
   await expect(trigger).toHaveAttribute('data-state', 'closed');
 }

@@ -8,6 +8,17 @@ import { ServiceError } from '../errors/ServiceError';
 import { getAppName, getOAuthRedirectUrl } from '../utils/env';
 import logger from '../logger';
 
+/** Shape of the OAuth token data persisted in credential_store. */
+export interface StoredOAuthTokens {
+  access_token: string;
+  token_type: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  /** Absolute expiration time in epoch milliseconds, computed from expires_in at save time. */
+  expires_at?: number;
+}
+
 export class McpOAuthError extends ServiceError {}
 
 export class McpOAuthStateNotFoundError extends ServiceError {
@@ -41,6 +52,8 @@ export interface OAuthCallbackParams {
 
 export interface OAuthCallbackResult {
   serverName: string;
+  /** The credential ID that was replaced, if any (used to clear suspension flags). */
+  replacedCredentialId?: string;
 }
 
 export class McpOAuthService {
@@ -180,9 +193,15 @@ export class McpOAuthService {
         throw new McpOAuthTokenError();
       }
 
+      // Compute absolute expiration time from relative expires_in
+      const tokenData: StoredOAuthTokens = { ...tokens };
+      if (tokens.expires_in && !tokenData.expires_at) {
+        tokenData.expires_at = Date.now() + tokens.expires_in * 1000;
+      }
+
       // Persist encrypted tokens in credential_store
       const credentialId = await this.credentialStoreService.save(
-        JSON.stringify(tokens)
+        JSON.stringify(tokenData)
       );
 
       // Update or create the MCP server config with the credential reference
@@ -191,11 +210,13 @@ export class McpOAuthService {
         | (Record<string, unknown> & { type: string })
         | undefined;
 
+      let replacedCredentialId: string | undefined;
+
       if (existingRaw && existingRaw.type === 'oauth-http') {
         // Remove old credential if replaced
-        const oldCredentialId = existingRaw.credentialId as string | undefined;
-        if (oldCredentialId) {
-          await this.credentialStoreService.delete(oldCredentialId);
+        replacedCredentialId = existingRaw.credentialId as string | undefined;
+        if (replacedCredentialId) {
+          await this.credentialStoreService.delete(replacedCredentialId);
         }
         existingRaw.credentialId = credentialId;
       } else {
@@ -216,7 +237,7 @@ export class McpOAuthService {
       // Clean up the pending flow
       await this.pendingOAuthFlowService.delete(stateId);
 
-      return { serverName };
+      return { serverName, replacedCredentialId };
     } catch (error: unknown) {
       // Clean up the pending flow even on failure
       await this.pendingOAuthFlowService.delete(stateId);

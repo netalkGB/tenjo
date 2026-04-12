@@ -242,7 +242,7 @@ describe('McpToolService', () => {
           type: 'oauth-http',
           url: 'http://oauth.example.com/mcp',
           credentialId: 'cred-123'
-        } as unknown as McpServersConfig[string]
+        } as McpServersConfig[string]
       };
 
       const result = await service.validateAndGetToolsByServer(servers);
@@ -260,7 +260,7 @@ describe('McpToolService', () => {
           type: 'oauth-http',
           url: 'http://oauth.example.com/mcp',
           credentialId: 'cred-missing'
-        } as unknown as McpServersConfig[string]
+        } as McpServersConfig[string]
       };
 
       const result = await service.validateAndGetToolsByServer(servers);
@@ -534,7 +534,7 @@ describe('McpToolService', () => {
       const config = {
         type: 'oauth-http',
         url: 'http://oauth.example.com/mcp'
-      } as unknown as OAuthHttpMcpServerConfig;
+      } as OAuthHttpMcpServerConfig;
 
       await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
         McpOAuthRequiredError
@@ -545,6 +545,63 @@ describe('McpToolService', () => {
       );
     });
 
+    it('should throw McpOAuthRequiredError when token has expired', async () => {
+      const expiredTokenData = JSON.stringify({
+        access_token: 'test-token',
+        expires_at: Date.now() - 1000 // expired 1 second ago
+      });
+      mockCredentialStore.load.mockResolvedValue(expiredTokenData);
+
+      const config = {
+        type: 'oauth-http',
+        url: 'http://oauth.example.com/mcp',
+        credentialId: 'cred-123'
+      } as OAuthHttpMcpServerConfig;
+
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        McpOAuthRequiredError
+      );
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        'OAuth token has expired. Please re-authorize from settings.'
+      );
+
+      // Should not attempt to create transport
+      expect(mockCreateHttpTransportWithFallback).not.toHaveBeenCalled();
+    });
+
+    it('should proceed when token has no expires_at (backwards compatibility)', async () => {
+      const tokenData = JSON.stringify({ access_token: 'test-token' });
+      mockCredentialStore.load.mockResolvedValue(tokenData);
+
+      const config = {
+        type: 'oauth-http',
+        url: 'http://oauth.example.com/mcp',
+        credentialId: 'cred-123'
+      } as OAuthHttpMcpServerConfig;
+
+      await callCreateOAuthTransport(service, config);
+
+      expect(mockCreateHttpTransportWithFallback).toHaveBeenCalled();
+    });
+
+    it('should proceed when token has not yet expired', async () => {
+      const validTokenData = JSON.stringify({
+        access_token: 'test-token',
+        expires_at: Date.now() + 3600_000 // expires in 1 hour
+      });
+      mockCredentialStore.load.mockResolvedValue(validTokenData);
+
+      const config = {
+        type: 'oauth-http',
+        url: 'http://oauth.example.com/mcp',
+        credentialId: 'cred-123'
+      } as OAuthHttpMcpServerConfig;
+
+      await callCreateOAuthTransport(service, config);
+
+      expect(mockCreateHttpTransportWithFallback).toHaveBeenCalled();
+    });
+
     it('should throw McpOAuthRequiredError when onRedirectToAuthorization is called', async () => {
       const tokenData = JSON.stringify({ access_token: 'test-token' });
       mockCredentialStore.load.mockResolvedValue(tokenData);
@@ -553,7 +610,7 @@ describe('McpToolService', () => {
         type: 'oauth-http',
         url: 'http://oauth.example.com/mcp',
         credentialId: 'cred-123'
-      } as unknown as OAuthHttpMcpServerConfig;
+      } as OAuthHttpMcpServerConfig;
 
       // Call createOAuthTransport to trigger McpOAuthClientProvider construction
       await callCreateOAuthTransport(service, config);
@@ -574,6 +631,105 @@ describe('McpToolService', () => {
       }).toThrow(
         'OAuth authorization required. Please authorize from settings.'
       );
+    });
+  });
+
+  // ── Credential suspension ──────────────────────────────────────
+  describe('credential suspension', () => {
+    const callCreateOAuthTransport = (
+      svc: McpToolService,
+      config: OAuthHttpMcpServerConfig
+    ) =>
+      (
+        svc as unknown as {
+          createOAuthTransport: (
+            c: OAuthHttpMcpServerConfig
+          ) => Promise<unknown>;
+        }
+      ).createOAuthTransport(config);
+
+    it('should suspend credential after token expiration and skip DB lookup on retry', async () => {
+      const expiredTokenData = JSON.stringify({
+        access_token: 'test-token',
+        expires_at: Date.now() - 1000
+      });
+      mockCredentialStore.load.mockResolvedValue(expiredTokenData);
+
+      const config = {
+        type: 'oauth-http',
+        url: 'http://oauth.example.com/mcp',
+        credentialId: 'cred-suspended'
+      } as OAuthHttpMcpServerConfig;
+
+      // First call — loads from DB, detects expiration, suspends
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        McpOAuthRequiredError
+      );
+      expect(mockCredentialStore.load).toHaveBeenCalledTimes(1);
+
+      mockCredentialStore.load.mockClear();
+
+      // Second call — skipped via suspension, no DB lookup
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        McpOAuthRequiredError
+      );
+      expect(mockCredentialStore.load).not.toHaveBeenCalled();
+    });
+
+    it('should suspend credential when tokens are not found', async () => {
+      mockCredentialStore.load.mockResolvedValue(null);
+
+      const config = {
+        type: 'oauth-http',
+        url: 'http://oauth.example.com/mcp',
+        credentialId: 'cred-missing'
+      } as OAuthHttpMcpServerConfig;
+
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        McpOAuthRequiredError
+      );
+
+      mockCredentialStore.load.mockClear();
+
+      // Suspended — no DB lookup
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        McpOAuthRequiredError
+      );
+      expect(mockCredentialStore.load).not.toHaveBeenCalled();
+    });
+
+    it('should resume after unsuspendCredential is called', async () => {
+      const expiredTokenData = JSON.stringify({
+        access_token: 'test-token',
+        expires_at: Date.now() - 1000
+      });
+      mockCredentialStore.load.mockResolvedValue(expiredTokenData);
+
+      const config = {
+        type: 'oauth-http',
+        url: 'http://oauth.example.com/mcp',
+        credentialId: 'cred-resume'
+      } as OAuthHttpMcpServerConfig;
+
+      // Trigger suspension
+      await expect(callCreateOAuthTransport(service, config)).rejects.toThrow(
+        McpOAuthRequiredError
+      );
+
+      // Clear suspension
+      service.unsuspendCredential('cred-resume');
+
+      // Now provide valid tokens
+      const validTokenData = JSON.stringify({
+        access_token: 'new-token',
+        expires_at: Date.now() + 3600_000
+      });
+      mockCredentialStore.load.mockResolvedValue(validTokenData);
+
+      await callCreateOAuthTransport(service, config);
+
+      expect(mockCredentialStore.load).toHaveBeenCalledWith('cred-resume');
+      expect(mockCreateHttpTransportWithFallback).toHaveBeenCalled();
     });
   });
 

@@ -124,6 +124,8 @@ export function ToolsMcpSettings() {
   const [reauthorizingServer, setReauthorizingServer] = useState<
     string | undefined
   >(undefined);
+  // Reference to the OAuth popup so the parent can close it
+  const oauthPopupRef = useRef<Window | null>(null);
 
   const isAdmin = userRole === 'admin';
 
@@ -140,8 +142,35 @@ export function ToolsMcpSettings() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'mcp-oauth-success') {
+        const serverName = event.data.serverName as string | undefined;
+        // Close the popup from the parent — window.close() in the popup
+        // is blocked by browsers after cross-origin OAuth redirects
+        oauthPopupRef.current?.close();
+        oauthPopupRef.current = null;
         setReauthorizingServer(undefined);
         setMcpToolsLoaded(false);
+        // Optimistically mark the server as authorized and clear its error
+        // so "checking connection" badge shows immediately instead of "UNAUTHORIZED"
+        if (serverName) {
+          setMcpServers(prev => {
+            const serverConfig = prev[serverName];
+            if (serverConfig?.type === 'oauth-http') {
+              return {
+                ...prev,
+                [serverName]: { ...serverConfig, authorized: true }
+              };
+            }
+            return prev;
+          });
+          setMcpConnectionErrors(prev => {
+            if (serverName in prev) {
+              const next = { ...prev };
+              delete next[serverName];
+              return next;
+            }
+            return prev;
+          });
+        }
         loadMcpServers();
         loadMcpTools();
         reloadTools(true);
@@ -290,11 +319,13 @@ export function ToolsMcpSettings() {
         'mcp-oauth',
         'width=600,height=700,menubar=no,toolbar=no'
       );
+      oauthPopupRef.current = popup;
       // Monitor popup — reset state if user closes it without completing OAuth
       if (popup) {
         const timer = setInterval(() => {
           if (popup.closed) {
             clearInterval(timer);
+            oauthPopupRef.current = null;
             setReauthorizingServer(current =>
               current === name ? undefined : current
             );

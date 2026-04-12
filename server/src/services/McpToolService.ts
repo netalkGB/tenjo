@@ -9,6 +9,7 @@ import {
   createHttpTransportWithFallback
 } from 'tenjo-chat-engine';
 import type { CredentialStoreService } from './CredentialStoreService';
+import type { StoredOAuthTokens } from './McpOAuthService';
 import { ServiceError } from '../errors/ServiceError';
 import { getAppName, getOAuthRedirectUrl } from '../utils/env';
 import logger from '../logger';
@@ -43,9 +44,20 @@ function getCredentialId(config: OAuthHttpMcpServerConfig): string | undefined {
 }
 
 export class McpToolService {
+  /** Credential IDs that have failed OAuth and should not be retried until re-authorized. */
+  private readonly suspendedCredentials = new Set<string>();
+
   constructor(
     private readonly credentialStoreService: CredentialStoreService
   ) {}
+
+  /**
+   * Removes a credential ID from the suspended set.
+   * Called after successful re-authorization so the server is retried on the next request.
+   */
+  unsuspendCredential(credentialId: string): void {
+    this.suspendedCredentials.delete(credentialId);
+  }
 
   /**
    * Creates an HTTP transport with OAuth authentication for oauth-http servers.
@@ -62,10 +74,27 @@ export class McpToolService {
       );
     }
 
+    // Skip servers already known to need re-authorization
+    if (this.suspendedCredentials.has(credentialId)) {
+      throw new McpOAuthRequiredError(
+        'OAuth token has expired. Please re-authorize from settings.'
+      );
+    }
+
     const tokenJson = await this.credentialStoreService.load(credentialId);
     if (!tokenJson) {
+      this.suspendedCredentials.add(credentialId);
       throw new McpOAuthRequiredError(
         'OAuth tokens not found. Please re-authorize from settings.'
+      );
+    }
+
+    // Check token expiration before attempting connection
+    const tokenData = JSON.parse(tokenJson) as StoredOAuthTokens;
+    if (tokenData.expires_at && Date.now() >= tokenData.expires_at) {
+      this.suspendedCredentials.add(credentialId);
+      throw new McpOAuthRequiredError(
+        'OAuth token has expired. Please re-authorize from settings.'
       );
     }
 
@@ -81,12 +110,27 @@ export class McpToolService {
       }
     });
 
-    const tokens = JSON.parse(tokenJson) as Parameters<
-      typeof authProvider.saveTokens
-    >[0];
-    authProvider.saveTokens(tokens);
+    authProvider.saveTokens(tokenData);
 
     return createHttpTransportWithFallback(config.url, { authProvider });
+  }
+
+  /**
+   * Suspends the credential for an oauth-http server so it is skipped on future requests.
+   */
+  private suspendOAuthServer(
+    serverName: string,
+    serverConfig: McpServersConfig[string]
+  ): void {
+    if (serverConfig.type === 'oauth-http') {
+      const credentialId = getCredentialId(serverConfig);
+      if (credentialId) {
+        this.suspendedCredentials.add(credentialId);
+        logger.info(
+          `OAuth server suspended until re-authorization: ${serverName}`
+        );
+      }
+    }
   }
 
   /**
@@ -102,9 +146,21 @@ export class McpToolService {
   }
 
   /**
+   * Returns true if the given oauth-http server is suspended
+   * (failed auth and awaiting re-authorization).
+   */
+  private isOAuthServerSuspended(
+    serverConfig: McpServersConfig[string]
+  ): boolean {
+    if (serverConfig.type !== 'oauth-http') return false;
+    const credentialId = getCredentialId(serverConfig);
+    return !!credentialId && this.suspendedCredentials.has(credentialId);
+  }
+
+  /**
    * Validates connectivity to all MCP servers and returns discovered tools.
    * Collects per-server errors instead of throwing on first failure.
-   * OAuth servers without credentials are skipped (not treated as errors).
+   * OAuth servers without credentials or suspended are skipped silently.
    */
   async validateAndGetToolsByServer(
     mcpServers: McpServersConfig
@@ -113,13 +169,21 @@ export class McpToolService {
     const errors: Record<string, string> = {};
 
     for (const [serverName, serverConfig] of Object.entries(mcpServers)) {
-      // Skip OAuth servers that have not been authorized yet
-      if (
-        serverConfig.type === 'oauth-http' &&
-        !getCredentialId(serverConfig)
-      ) {
-        tools[serverName] = [];
-        continue;
+      // Skip OAuth servers that have not been authorized or need re-authorization
+      if (serverConfig.type === 'oauth-http') {
+        if (!getCredentialId(serverConfig)) {
+          tools[serverName] = [];
+          continue;
+        }
+        if (this.isOAuthServerSuspended(serverConfig)) {
+          logger.info(
+            `Skipped OAuth server (re-authorization required): ${serverName}`
+          );
+          tools[serverName] = [];
+          errors[serverName] =
+            'OAuth token has expired. Please re-authorize from settings.';
+          continue;
+        }
       }
 
       const mcpClientManager = new McpClientManager(
@@ -137,6 +201,9 @@ export class McpToolService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         errors[serverName] = message;
+        // Suspend OAuth servers on any failure — the MCP SDK wraps auth errors
+        // as UnauthorizedError so instanceof McpOAuthRequiredError won't match.
+        this.suspendOAuthServer(serverName, serverConfig);
       } finally {
         await mcpClientManager.close();
       }
@@ -171,11 +238,17 @@ export class McpToolService {
     const failedServers: Record<string, string> = {};
 
     for (const [serverName, serverConfig] of Object.entries(mcpServers)) {
-      // Skip OAuth servers that have not been authorized yet
+      // Skip OAuth servers that have not been authorized yet or are suspended
       if (
         serverConfig.type === 'oauth-http' &&
-        !getCredentialId(serverConfig)
+        (!getCredentialId(serverConfig) ||
+          this.isOAuthServerSuspended(serverConfig))
       ) {
+        if (this.isOAuthServerSuspended(serverConfig)) {
+          logger.info(
+            `Skipped OAuth server (re-authorization required): ${serverName}`
+          );
+        }
         continue;
       }
 
@@ -186,6 +259,7 @@ export class McpToolService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failedServers[serverName] = message;
+        this.suspendOAuthServer(serverName, serverConfig);
         logger.warn(
           `Failed to create transport for MCP server: ${serverName}`,
           { error: message }
@@ -208,10 +282,17 @@ export class McpToolService {
     mcpClientManager.setTransports(transports);
     const connectErrors = await mcpClientManager.connectWithPartialFailure();
 
-    // Map transport-index errors back to server names
+    // Map transport-index errors back to server names and suspend OAuth servers
     for (const [idx, msg] of Object.entries(connectErrors)) {
-      const name = serverNames[Number(idx)];
+      const i = Number(idx);
+      const name = serverNames[i];
       failedServers[name] = msg;
+
+      // Suspend OAuth servers that failed during connection (e.g. 401 from provider)
+      const serverConfig = mcpServers[name];
+      if (serverConfig) {
+        this.suspendOAuthServer(name, serverConfig);
+      }
     }
 
     if (Object.keys(failedServers).length > 0) {

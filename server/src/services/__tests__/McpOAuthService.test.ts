@@ -38,7 +38,7 @@ vi.mock('../../logger', () => ({
 let capturedOnRedirect: ((url: URL) => void) | undefined;
 let mockClientInfo: { client_id: string; client_secret?: string } | undefined;
 let mockCodeVerifier: string;
-let mockTokens: Record<string, string> | undefined;
+let mockTokens: Record<string, string | number> | undefined;
 
 vi.mock('tenjo-chat-engine', () => {
   // Must use function (not arrow) so it can be called with `new`
@@ -319,6 +319,63 @@ describe('McpOAuthService', () => {
       capturedOnRedirect?.(new URL('https://ignored.example.com'));
     });
 
+    it('should compute and store expires_at when tokens include expires_in', async () => {
+      mockPendingOAuthFlowService.load.mockResolvedValue(flowEntry);
+      mockTransportFinishAuth.mockResolvedValue(undefined);
+
+      mockTokens = {
+        access_token: 'at-123',
+        token_type: 'Bearer',
+        expires_in: 3600
+      };
+
+      mockCredentialStoreService.save.mockResolvedValue('cred-id-new');
+      mockGlobalSettingService.getMcpServersConfig.mockResolvedValue({});
+      mockGlobalSettingService.updateMcpServersConfig.mockResolvedValue(
+        undefined
+      );
+      mockPendingOAuthFlowService.delete.mockResolvedValue(undefined);
+
+      const before = Date.now();
+      await service.handleCallback(callbackParams);
+      const after = Date.now();
+
+      const savedJson = mockCredentialStoreService.save.mock
+        .calls[0][0] as string;
+      const savedData = JSON.parse(savedJson) as Record<string, unknown>;
+
+      expect(savedData.expires_at).toBeDefined();
+      const expiresAt = savedData.expires_at as number;
+      // expires_at should be roughly now + 3600s
+      expect(expiresAt).toBeGreaterThanOrEqual(before + 3600 * 1000);
+      expect(expiresAt).toBeLessThanOrEqual(after + 3600 * 1000);
+    });
+
+    it('should not add expires_at when tokens lack expires_in', async () => {
+      mockPendingOAuthFlowService.load.mockResolvedValue(flowEntry);
+      mockTransportFinishAuth.mockResolvedValue(undefined);
+
+      mockTokens = {
+        access_token: 'at-123',
+        token_type: 'Bearer'
+      };
+
+      mockCredentialStoreService.save.mockResolvedValue('cred-id-new');
+      mockGlobalSettingService.getMcpServersConfig.mockResolvedValue({});
+      mockGlobalSettingService.updateMcpServersConfig.mockResolvedValue(
+        undefined
+      );
+      mockPendingOAuthFlowService.delete.mockResolvedValue(undefined);
+
+      await service.handleCallback(callbackParams);
+
+      const savedJson = mockCredentialStoreService.save.mock
+        .calls[0][0] as string;
+      const savedData = JSON.parse(savedJson) as Record<string, unknown>;
+
+      expect(savedData.expires_at).toBeUndefined();
+    });
+
     it('should replace existing oauth-http server config and delete old credential', async () => {
       mockPendingOAuthFlowService.load.mockResolvedValue(flowEntry);
       mockTransportFinishAuth.mockResolvedValue(undefined);
@@ -344,7 +401,10 @@ describe('McpOAuthService', () => {
 
       const result = await service.handleCallback(callbackParams);
 
-      expect(result).toEqual({ serverName: 'my-mcp-server' });
+      expect(result).toEqual({
+        serverName: 'my-mcp-server',
+        replacedCredentialId: 'cred-id-old'
+      });
 
       // Old credential is deleted
       expect(mockCredentialStoreService.delete).toHaveBeenCalledWith(

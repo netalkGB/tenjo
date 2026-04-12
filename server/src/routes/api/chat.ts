@@ -10,7 +10,7 @@ import {
 } from '../../repositories/registry';
 import {
   globalSettingService,
-  credentialStoreService,
+  mcpToolService,
   knowledgeService,
   fileUploadService
 } from '../../services/registry';
@@ -23,7 +23,6 @@ import {
 import { HttpError } from '../../errors/HttpError';
 import type { Thread } from '../../repositories/ThreadRepository';
 import type { ModelConfig } from '../../repositories/GlobalSettingRepository';
-import { McpToolService } from '../../services/McpToolService';
 import {
   type McpClientManager,
   type MessageRequest,
@@ -63,7 +62,6 @@ function createStreamWriter(res: express.Response): StreamWriter {
   };
 }
 
-const mcpToolService = new McpToolService(credentialStoreService);
 const threadService = new ThreadService(
   threadRepo,
   messageRepo,

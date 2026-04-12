@@ -15,7 +15,6 @@ import type {
   ModelEntryResponse
 } from '../../repositories/GlobalSettingRepository';
 import type { McpServersConfig } from 'tenjo-chat-engine';
-import { McpToolService } from '../../services/McpToolService';
 import {
   UserService,
   UserNotFoundError,
@@ -39,6 +38,7 @@ import {
   globalSettingService,
   credentialStoreService,
   mcpOAuthService,
+  mcpToolService,
   fileCleanupService
 } from '../../services/registry';
 import {
@@ -47,7 +47,8 @@ import {
 } from '../../services/GlobalSettingService';
 import {
   McpOAuthError,
-  McpOAuthStateNotFoundError
+  McpOAuthStateNotFoundError,
+  type StoredOAuthTokens
 } from '../../services/McpOAuthService';
 import { HttpError } from '../../errors/HttpError';
 import { OpenAIChatApiClient, LocalChatApiClient } from 'tenjo-chat-engine';
@@ -57,7 +58,6 @@ import logger from '../../logger';
 
 export const settingsRouter = express.Router();
 
-const mcpToolService = new McpToolService(credentialStoreService);
 const userService = new UserService(userRepo);
 const invitationCodeService = new InvitationCodeService(invitationCodeRepo);
 const toolApprovalRuleService = new ToolApprovalRuleService(
@@ -457,9 +457,19 @@ settingsRouter.get(
       if (config.type === 'oauth-http') {
         const raw = config as unknown as Record<string, unknown>;
         const credentialId = raw.credentialId as string | undefined;
-        raw.authorized = credentialId
-          ? await credentialStoreService.exists(credentialId)
-          : false;
+        if (credentialId) {
+          const tokenJson = await credentialStoreService.load(credentialId);
+          if (tokenJson) {
+            const tokenData = JSON.parse(tokenJson) as StoredOAuthTokens;
+            // Token is authorized only if it has no expiration or is still valid
+            raw.authorized =
+              !tokenData.expires_at || Date.now() < tokenData.expires_at;
+          } else {
+            raw.authorized = false;
+          }
+        } else {
+          raw.authorized = false;
+        }
         delete raw.credentialId;
         delete raw.clientSecret;
       }
@@ -493,7 +503,16 @@ settingsRouter.get(
       await mcpToolService.validateAndGetToolsByServer(mcpServers);
 
     if (Object.keys(errors).length > 0) {
-      logger.warn('Some MCP servers failed to connect:', errors);
+      // Suspended servers are already logged at info level — only warn for
+      // unexpected connection failures discovered during this request.
+      const unexpectedErrors = Object.fromEntries(
+        Object.entries(errors).filter(
+          ([, msg]) => !msg.includes('Please re-authorize from settings.')
+        )
+      );
+      if (Object.keys(unexpectedErrors).length > 0) {
+        logger.warn('Some MCP servers failed to connect:', unexpectedErrors);
+      }
     }
 
     res.json({ tools, errors });
@@ -1134,6 +1153,10 @@ settingsRouter.get(
         code,
         state: stateId
       });
+      // Clear the suspension flag so the server is retried on the next request
+      if (result.replacedCredentialId) {
+        mcpToolService.unsuspendCredential(result.replacedCredentialId);
+      }
       res.render('oauth-callback', {
         success: true,
         serverName: result.serverName
