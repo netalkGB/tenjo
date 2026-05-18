@@ -45,6 +45,12 @@ export interface ChatApiMessageRequest {
   tool_calls?: ChatApiToolCallResponse[];
 }
 
+export interface ChatApiToolCallStreamEvent {
+  toolCallId: string;
+  toolName: string;
+  argumentsDelta: string;
+}
+
 export interface ChatApiClient {
   chatStream(
     messages: ChatApiMessageRequest[],
@@ -57,5 +63,8 @@ export interface ChatApiClient {
   setMessageHandler(onMessage: (message: string) => void): void;
   setReasoningHandler(onReasoning: (reasoning: string) => void): void;
   setStatusHandler(onStatusChanged: (status: ChatApiStatus) => void): void;
+  setToolCallStreamHandler?(
+    onToolCallStream: (event: ChatApiToolCallStreamEvent) => void
+  ): void;
   getStatus(): ChatApiStatus;
 }

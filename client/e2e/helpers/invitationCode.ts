@@ -33,7 +33,6 @@ export async function createUserViaInvitation(
   newUser: {
     fullName: string;
     userName: string;
-    email: string;
     password: string;
     role?: 'admin' | 'standard';
   }
@@ -62,7 +61,6 @@ export async function createUserViaInvitation(
   await page.getByTestId('register-invitation-code-input').fill(invitationCode);
   await page.getByTestId('register-full-name-input').fill(newUser.fullName);
   await page.getByTestId('register-user-name-input').fill(newUser.userName);
-  await page.getByTestId('register-email-input').fill(newUser.email);
   await page.getByTestId('register-password-input').fill(newUser.password);
   await page
     .getByTestId('register-password-confirm-input')

@@ -25,8 +25,8 @@ vi.mock('../../factories/chatClientFactory', () => ({
     type Handler = (...args: unknown[]) => void;
     const handlers: Record<string, Handler> = {};
     return {
-      onContextAdded: vi.fn((cb: Handler) => {
-        handlers.onContextAdded = cb;
+      onMessageAdded: vi.fn((cb: Handler) => {
+        handlers.onMessageAdded = cb;
       }),
       setMessageHandler: vi.fn((cb: Handler) => {
         handlers.onMessage = cb;
@@ -34,15 +34,16 @@ vi.mock('../../factories/chatClientFactory', () => ({
       setThinkingHandler: vi.fn(),
       setReasoningHandler: vi.fn(),
       setToolCallHandler: vi.fn(),
+      setToolCallStreamHandler: vi.fn(),
       setMessages: vi.fn(),
       setSystemPrompt: vi.fn(),
       getToolCallPlan: vi.fn().mockReturnValue([]),
       addToolCallResult: vi.fn(),
       validateToolCallResult: vi.fn(),
       sendMessage: vi.fn(async (msg: string) => {
-        // Simulate: context added for user, stream chunk, context added for assistant
-        if (handlers.onContextAdded) {
-          await handlers.onContextAdded({
+        // Simulate: message added for user, stream chunk, message added for assistant
+        if (handlers.onMessageAdded) {
+          await handlers.onMessageAdded({
             role: 'user',
             content: msg
           });
@@ -50,8 +51,8 @@ vi.mock('../../factories/chatClientFactory', () => ({
         if (handlers.onMessage) {
           handlers.onMessage('Hello from mock');
         }
-        if (handlers.onContextAdded) {
-          await handlers.onContextAdded({
+        if (handlers.onMessageAdded) {
+          await handlers.onMessageAdded({
             role: 'assistant',
             content: [{ type: 'text', text: 'Hello from mock' }]
           });
@@ -188,17 +189,22 @@ describe('POST /api/chat/threads/:threadId/messages (SSE)', () => {
 
     const events = parseSseEvents(res.text);
 
-    // Should have a generatingTitle event
-    const titleEvent = events.find(
-      (e) => typeof e === 'object' && e !== null && 'generatingTitle' in e
-    );
-    expect(titleEvent).toBeDefined();
-
-    // Done event should include a title
+    // Title is delivered as a standalone event AFTER `done` so the client
+    // can release its input lock before title generation finishes. The
+    // `generatingTitle` notice between `done` and `title` is timing-dependent
+    // (only emitted if the title is still pending when the stream completes)
+    // and therefore not asserted here.
     const doneEvent = events.find(
       (e) => typeof e === 'object' && e !== null && 'done' in e
     ) as Record<string, unknown> | undefined;
-    expect(doneEvent?.title).toBeDefined();
+    expect(doneEvent).toBeDefined();
+    expect(doneEvent?.title).toBeUndefined();
+
+    const titleEvent = events.find(
+      (e) =>
+        typeof e === 'object' && e !== null && 'title' in e && !('done' in e)
+    ) as Record<string, unknown> | undefined;
+    expect(titleEvent?.title).toBeDefined();
   });
 
   it('accepts parentMessageId for follow-up messages', async () => {

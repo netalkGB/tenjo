@@ -3,22 +3,18 @@ import {
   ADMIN_USER_NAME,
   ADMIN_PASSWORD,
   ADMIN_FULL_NAME,
-  ADMIN_EMAIL,
   NORMAL_USER_NAME,
-  NORMAL_FULL_NAME,
-  NORMAL_EMAIL
+  NORMAL_FULL_NAME
 } from '../setup/constants';
 import { login } from '../../helpers/auth';
 import { createUserViaInvitation } from '../../helpers/invitationCode';
 
 const TEST_USER_FULL_NAME = 'inviteTest';
 const TEST_USER_NAME = 'inviteTestUser';
-const TEST_USER_EMAIL = 'invite-test@example.invalid';
 const TEST_USER_PASSWORD = 'P@ssw0rd';
 
 const ADMIN_INVITE_USER_FULL_NAME = 'adminInviteTest';
 const ADMIN_INVITE_USER_NAME = 'adminInviteTestUser';
-const ADMIN_INVITE_USER_EMAIL = 'admin-invite-test@example.invalid';
 const ADMIN_INVITE_USER_PASSWORD = 'P@ssw0rd';
 
 test.describe
@@ -30,7 +26,6 @@ test.describe
         {
           fullName: TEST_USER_FULL_NAME,
           userName: TEST_USER_NAME,
-          email: TEST_USER_EMAIL,
           password: TEST_USER_PASSWORD
         }
       );
@@ -47,13 +42,10 @@ test.describe
       const tableBody = page.locator('table tbody');
       await expect(tableBody).toContainText(ADMIN_FULL_NAME);
       await expect(tableBody).toContainText(ADMIN_USER_NAME);
-      await expect(tableBody).toContainText(ADMIN_EMAIL);
       await expect(tableBody).toContainText(NORMAL_FULL_NAME);
       await expect(tableBody).toContainText(NORMAL_USER_NAME);
-      await expect(tableBody).toContainText(NORMAL_EMAIL);
       await expect(tableBody).toContainText(TEST_USER_FULL_NAME);
       await expect(tableBody).toContainText(TEST_USER_NAME);
-      await expect(tableBody).toContainText(TEST_USER_EMAIL);
     });
 
     test('admin invitation code creates admin user and shows used badge', async ({
@@ -65,7 +57,6 @@ test.describe
         {
           fullName: ADMIN_INVITE_USER_FULL_NAME,
           userName: ADMIN_INVITE_USER_NAME,
-          email: ADMIN_INVITE_USER_EMAIL,
           password: ADMIN_INVITE_USER_PASSWORD,
           role: 'admin'
         }
@@ -83,6 +74,5 @@ test.describe
       const tableBody = page.locator('table tbody');
       await expect(tableBody).toContainText(ADMIN_INVITE_USER_FULL_NAME);
       await expect(tableBody).toContainText(ADMIN_INVITE_USER_NAME);
-      await expect(tableBody).toContainText(ADMIN_INVITE_USER_EMAIL);
     });
   });

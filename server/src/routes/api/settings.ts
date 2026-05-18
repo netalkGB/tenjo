@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireCsrfToken } from '../../middleware/csrf';
 import { requireAuth } from '../../middleware/auth';
 import { requireAdmin } from '../../middleware/requireAdmin';
+import { requireMultiUserMode } from '../../middleware/requireMultiUserMode';
 import {
   type ErrorResponse,
   type SessionUser,
@@ -39,11 +40,14 @@ import {
   credentialStoreService,
   mcpOAuthService,
   mcpToolService,
-  fileCleanupService
+  fileCleanupService,
+  imageService
 } from '../../services/registry';
+import { ImageValidationError } from '../../services/ImageService';
 import {
   ModelNotFoundError,
-  ModelDuplicateError
+  ModelDuplicateError,
+  BrandingValidationError
 } from '../../services/GlobalSettingService';
 import {
   McpOAuthError,
@@ -677,7 +681,6 @@ interface ApiUser {
   id: string;
   fullName: string;
   userName: string;
-  email: string;
   userRole: UserRole;
 }
 
@@ -862,7 +865,6 @@ interface UpdateProfileRequest {
   body: {
     fullName?: string;
     userName?: string;
-    email?: string;
   };
 }
 
@@ -878,12 +880,11 @@ settingsRouter.patch(
     async (req, res) => {
       try {
         const sessionUser = req.user as SessionUser;
-        const { fullName, userName, email } = req.body;
+        const { fullName, userName } = req.body;
 
         const result = await userService.updateProfile(sessionUser.id, {
           fullName,
-          userName,
-          email
+          userName
         });
 
         // Update session information
@@ -962,6 +963,8 @@ interface GetPreferencesResponse {
   theme?: string;
   selectedKnowledgeIds?: string[];
   disabledMcpTools?: string[];
+  executeCodeEnabled?: boolean;
+  webSearchEnabled?: boolean;
 }
 
 settingsRouter.get(
@@ -987,6 +990,8 @@ interface UpdatePreferencesRequest {
     theme?: string;
     selectedKnowledgeIds?: string[];
     disabledMcpTools?: string[];
+    executeCodeEnabled?: boolean;
+    webSearchEnabled?: boolean;
   };
 }
 
@@ -1003,13 +1008,21 @@ settingsRouter.patch(
     UpdatePreferencesResponse | ErrorResponse
   >(async (req, res) => {
     const sessionUser = req.user as SessionUser;
-    const { language, theme, selectedKnowledgeIds, disabledMcpTools } =
-      req.body;
+    const {
+      language,
+      theme,
+      selectedKnowledgeIds,
+      disabledMcpTools,
+      executeCodeEnabled,
+      webSearchEnabled
+    } = req.body;
     await userService.updateUserPreferences(sessionUser.id, {
       language,
       theme,
       selectedKnowledgeIds,
-      disabledMcpTools
+      disabledMcpTools,
+      executeCodeEnabled,
+      webSearchEnabled
     });
     res.json({ success: true });
   })
@@ -1173,5 +1186,187 @@ settingsRouter.get(
         errorMessage: message
       });
     }
+  }
+);
+
+/*
+ * GET /api/settings/branding
+ * Returns the current app branding (title, logo URL, favicon URL).
+ * Public endpoint — used by the login page and pre-auth UI.
+ */
+interface BrandingResponse {
+  appTitle: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+}
+
+function buildArtifactUrl(filename: string | undefined): string | null {
+  if (!filename) return null;
+  return `/api/upload/artifacts/${filename}`;
+}
+
+settingsRouter.get(
+  '/branding',
+  async (
+    _req: express.Request,
+    res: express.Response<BrandingResponse | ErrorResponse>
+  ) => {
+    const branding = await globalSettingService.getBrandingSettings();
+    res.json({
+      appTitle: branding.appTitle ?? null,
+      logoUrl: buildArtifactUrl(branding.logoFilename),
+      faviconUrl: buildArtifactUrl(branding.faviconFilename)
+    });
+  }
+);
+
+/*
+ * PUT /api/settings/branding
+ * Updates the app title (admin only). Pass `null` to reset to the default.
+ * Logo/favicon assets are managed via dedicated sub-resources below.
+ */
+interface UpdateBrandingTitleRequest {
+  body: {
+    appTitle?: string | null;
+  };
+}
+
+settingsRouter.put(
+  '/branding',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  requireMultiUserMode,
+  typedHandler<UpdateBrandingTitleRequest, BrandingResponse | ErrorResponse>(
+    async (req, res) => {
+      const sessionUser = req.user as SessionUser;
+      const { appTitle } = req.body;
+
+      try {
+        const updated = await globalSettingService.updateBranding(
+          { appTitle },
+          sessionUser.id
+        );
+        res.json({
+          appTitle: updated.appTitle ?? null,
+          logoUrl: buildArtifactUrl(updated.logoFilename),
+          faviconUrl: buildArtifactUrl(updated.faviconFilename)
+        });
+      } catch (error) {
+        if (error instanceof BrandingValidationError) {
+          throw new HttpError(StatusCodes.BAD_REQUEST, error.message);
+        }
+        throw error;
+      }
+    }
+  )
+);
+
+/*
+ * PUT /api/settings/branding/(logo|favicon)
+ * Uploads a branding asset (admin only). Body is the raw image bytes
+ * (PNG/JPEG/SVG, up to 10MB). Replaces any previous asset; the orphaned
+ * file is removed from disk.
+ *
+ * DELETE /api/settings/branding/(logo|favicon)
+ * Resets the asset to the default and deletes the previous file.
+ */
+const BRANDING_ASSET_MAX_SIZE = 10 * 1024 * 1024;
+
+async function uploadBrandingAssetHandler(
+  req: express.Request,
+  res: express.Response<BrandingResponse | ErrorResponse>,
+  target: 'logo' | 'favicon'
+): Promise<void> {
+  const sessionUser = req.user as SessionUser;
+  const fileBuffer = req.body as Buffer;
+
+  let uploaded: { filename: string; url: string };
+  try {
+    uploaded = await imageService.uploadImage(fileBuffer, { allowSvg: true });
+  } catch (err) {
+    if (err instanceof ImageValidationError) {
+      throw new HttpError(StatusCodes.BAD_REQUEST, err.message);
+    }
+    throw err;
+  }
+
+  const patch =
+    target === 'logo'
+      ? { logoFilename: uploaded.filename }
+      : { faviconFilename: uploaded.filename };
+  const updated = await globalSettingService.updateBranding(
+    patch,
+    sessionUser.id
+  );
+  res.json({
+    appTitle: updated.appTitle ?? null,
+    logoUrl: buildArtifactUrl(updated.logoFilename),
+    faviconUrl: buildArtifactUrl(updated.faviconFilename)
+  });
+}
+
+async function resetBrandingAssetHandler(
+  req: express.Request,
+  res: express.Response<BrandingResponse | ErrorResponse>,
+  target: 'logo' | 'favicon'
+): Promise<void> {
+  const sessionUser = req.user as SessionUser;
+  const patch =
+    target === 'logo' ? { logoFilename: null } : { faviconFilename: null };
+  const updated = await globalSettingService.updateBranding(
+    patch,
+    sessionUser.id
+  );
+  res.json({
+    appTitle: updated.appTitle ?? null,
+    logoUrl: buildArtifactUrl(updated.logoFilename),
+    faviconUrl: buildArtifactUrl(updated.faviconFilename)
+  });
+}
+
+settingsRouter.put(
+  '/branding/logo',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  requireMultiUserMode,
+  express.raw({ type: '*/*', limit: BRANDING_ASSET_MAX_SIZE }),
+  async (req, res) => {
+    await uploadBrandingAssetHandler(req, res, 'logo');
+  }
+);
+
+settingsRouter.delete(
+  '/branding/logo',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  requireMultiUserMode,
+  async (req, res) => {
+    await resetBrandingAssetHandler(req, res, 'logo');
+  }
+);
+
+settingsRouter.put(
+  '/branding/favicon',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  requireMultiUserMode,
+  express.raw({ type: '*/*', limit: BRANDING_ASSET_MAX_SIZE }),
+  async (req, res) => {
+    await uploadBrandingAssetHandler(req, res, 'favicon');
+  }
+);
+
+settingsRouter.delete(
+  '/branding/favicon',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  requireMultiUserMode,
+  async (req, res) => {
+    await resetBrandingAssetHandler(req, res, 'favicon');
   }
 );

@@ -160,7 +160,6 @@ describe('POST /api/register', () => {
   it('registers first user as admin when no admin exists', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'firstadmin',
-      email: 'admin@example.com',
       password: VALID_PASSWORD
     });
 
@@ -180,7 +179,6 @@ describe('POST /api/register', () => {
     const res = await agent.post('/api/register').send({
       fullName: 'John Doe',
       userName: 'johndoe',
-      email: 'john@example.com',
       password: VALID_PASSWORD
     });
 
@@ -191,7 +189,6 @@ describe('POST /api/register', () => {
   it('returns 400 for invalid userName (too short or invalid chars)', async () => {
     const res = await agent.post('/api/register').send({
       userName: '',
-      email: 'test@example.com',
       password: VALID_PASSWORD
     });
 
@@ -202,7 +199,6 @@ describe('POST /api/register', () => {
   it('returns 400 for userName with special characters', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'user@name!',
-      email: 'test@example.com',
       password: VALID_PASSWORD
     });
 
@@ -210,21 +206,9 @@ describe('POST /api/register', () => {
     expect(res.body.detail).toBe('register_user_name_invalid');
   });
 
-  it('returns 400 for missing email', async () => {
-    const res = await agent.post('/api/register').send({
-      userName: 'testuser',
-      email: '',
-      password: VALID_PASSWORD
-    });
-
-    expect(res.status).toBe(400);
-    expect(res.body.detail).toBe('profile_email_required');
-  });
-
   it('returns 400 for password that is too short', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'testuser',
-      email: 'test@example.com',
       password: 'Ab1!'
     });
 
@@ -236,7 +220,6 @@ describe('POST /api/register', () => {
   it('returns 400 for password missing uppercase', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'testuser',
-      email: 'test@example.com',
       password: 'test1234!'
     });
 
@@ -248,7 +231,6 @@ describe('POST /api/register', () => {
   it('returns 400 for password missing lowercase', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'testuser',
-      email: 'test@example.com',
       password: 'TEST1234!'
     });
 
@@ -259,7 +241,6 @@ describe('POST /api/register', () => {
   it('returns 400 for password missing digit', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'testuser',
-      email: 'test@example.com',
       password: 'TestTest!'
     });
 
@@ -270,7 +251,6 @@ describe('POST /api/register', () => {
   it('returns 400 for password missing symbol', async () => {
     const res = await agent.post('/api/register').send({
       userName: 'testuser',
-      email: 'test@example.com',
       password: 'Test1234'
     });
 
@@ -282,14 +262,12 @@ describe('POST /api/register', () => {
     // Register first user (becomes admin)
     await agent.post('/api/register').send({
       userName: 'duplicate',
-      email: 'first@example.com',
       password: VALID_PASSWORD
     });
 
     // Attempt to register with same userName
     const res = await agent.post('/api/register').send({
       userName: 'duplicate',
-      email: 'second@example.com',
       password: VALID_PASSWORD,
       invitationCode: 'doesnotmatter'
     });
@@ -298,22 +276,27 @@ describe('POST /api/register', () => {
     expect(res.body.detail).toBe('register_user_name_already_exists');
   });
 
-  it('returns 409 for duplicate email', async () => {
+  it('allows multiple users to register without email', async () => {
     await agent.post('/api/register').send({
-      userName: 'user1',
-      email: 'same@example.com',
+      userName: 'noemail1',
       password: VALID_PASSWORD
     });
 
-    const res = await agent.post('/api/register').send({
-      userName: 'user2',
-      email: 'same@example.com',
-      password: VALID_PASSWORD,
-      invitationCode: 'doesnotmatter'
+    const admin = await seedTestUser({ userRole: 'admin' });
+    const { invitationCodeRepo } = await import('../../repositories/registry');
+    const created = await invitationCodeRepo.create({
+      user_role: 'standard',
+      used: false,
+      created_by: admin.id
     });
 
-    expect(res.status).toBe(409);
-    expect(res.body.detail).toBe('register_email_already_exists');
+    const res = await agent.post('/api/register').send({
+      userName: 'noemail2',
+      password: VALID_PASSWORD,
+      invitationCode: created.code
+    });
+
+    expect(res.status).toBe(200);
   });
 
   it('returns 400 when invitation code is required but not provided', async () => {
@@ -322,7 +305,6 @@ describe('POST /api/register', () => {
 
     const res = await agent.post('/api/register').send({
       userName: 'newuser',
-      email: 'new@example.com',
       password: VALID_PASSWORD
     });
 
@@ -337,7 +319,6 @@ describe('POST /api/register', () => {
     const nonExistentCode = '00000000-0000-0000-0000-000000000000';
     const res = await agent.post('/api/register').send({
       userName: 'newuser',
-      email: 'new@example.com',
       password: VALID_PASSWORD,
       invitationCode: nonExistentCode
     });
@@ -360,7 +341,6 @@ describe('POST /api/register', () => {
 
     const res = await agent.post('/api/register').send({
       userName: 'newuser',
-      email: 'new@example.com',
       password: VALID_PASSWORD,
       invitationCode: created.code
     });
@@ -381,7 +361,6 @@ describe('POST /api/register', () => {
 
     const res = await agent.post('/api/register').send({
       userName: 'invited',
-      email: 'invited@example.com',
       password: VALID_PASSWORD,
       invitationCode: created.code
     });
@@ -398,7 +377,6 @@ describe('POST /api/register', () => {
     const res = await agent.post('/api/register').send({
       fullName: 'A'.repeat(65),
       userName: 'testuser',
-      email: 'test@example.com',
       password: VALID_PASSWORD
     });
 

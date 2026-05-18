@@ -131,14 +131,14 @@
     @apply bg-background text-foreground;
     margin: 0 !important;
     padding: 0 !important;
-    height: 100vh;
+    height: 100dvh;
     width: 100vw;
     overflow-x: hidden;
     overflow-y: hidden;
     overscroll-behavior: none;
   }
   #root {
-    height: 100vh;
+    height: 100dvh;
     width: 100vw;
     overflow-y: auto;
     overscroll-behavior: contain;

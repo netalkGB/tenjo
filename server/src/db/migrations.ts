@@ -185,5 +185,10 @@ export const migrations: Migration[] = [
     version: 10,
     name: 'add_generating_since_to_threads',
     up: `ALTER TABLE "threads" ADD COLUMN "generating_since" timestamp;`
+  },
+  {
+    version: 11,
+    name: 'make_users_email_nullable',
+    up: `ALTER TABLE "users" ALTER COLUMN "email" DROP NOT NULL;`
   }
 ];

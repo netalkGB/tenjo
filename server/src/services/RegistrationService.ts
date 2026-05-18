@@ -4,8 +4,7 @@ import { ServiceError } from '../errors/ServiceError';
 import {
   validatePassword,
   validateUserName,
-  validateFullName,
-  validateEmail
+  validateFullName
 } from '../utils/validation';
 import { hashPassword } from '../utils/passwordHasher';
 
@@ -16,7 +15,6 @@ export class RegistrationDuplicateError extends ServiceError {}
 interface RegisterParams {
   fullName?: string;
   userName: string;
-  email: string;
   password: string;
   invitationCode?: string;
 }
@@ -33,16 +31,11 @@ export class RegistrationService {
   }
 
   async register(params: RegisterParams): Promise<void> {
-    const { fullName, userName, email, password, invitationCode } = params;
+    const { fullName, userName, password, invitationCode } = params;
 
     const userNameError = validateUserName(userName);
     if (userNameError) {
       throw new RegistrationValidationError(userNameError);
-    }
-
-    const emailError = validateEmail(email);
-    if (emailError) {
-      throw new RegistrationValidationError(emailError);
     }
 
     const fullNameError = validateFullName(fullName ?? '');
@@ -58,11 +51,6 @@ export class RegistrationService {
     const existingUserName = await this.userRepo.findByUserName(userName);
     if (existingUserName) {
       throw new RegistrationDuplicateError('register_user_name_already_exists');
-    }
-
-    const existingEmail = await this.userRepo.findByEmail(email);
-    if (existingEmail) {
-      throw new RegistrationDuplicateError('register_email_already_exists');
     }
 
     const hasAdmin = await this.userRepo.existsAdmin();
@@ -94,7 +82,7 @@ export class RegistrationService {
     const newUser = await this.userRepo.create({
       full_name: fullName || null,
       user_name: userName,
-      email,
+      email: null,
       password: hashedPassword,
       user_role: userRole
     });

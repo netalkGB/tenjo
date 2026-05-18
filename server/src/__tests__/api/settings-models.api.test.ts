@@ -25,7 +25,7 @@ vi.mock('../../factories/chatClientFactory', () => ({
     getMaxContextLength: vi.fn().mockResolvedValue(4096)
   })),
   createChatClient: vi.fn(() => ({
-    onContextAdded: vi.fn(),
+    onMessageAdded: vi.fn(),
     setMessageHandler: vi.fn(),
     setThinkingHandler: vi.fn(),
     setReasoningHandler: vi.fn(),

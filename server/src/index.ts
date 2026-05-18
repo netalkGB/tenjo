@@ -15,6 +15,8 @@ import { sessionUserMiddleware } from './middleware/sessionUser';
 import { setupRoutes } from './routes';
 import { unexpectedErrorHandler } from './middleware/unexpectedErrorHandler';
 import { toolApprovalEmitter } from './services/ToolApprovalEmitter';
+import { generationAbortRegistry } from './services/GenerationAbortRegistry';
+import { globalSettingService } from './services/registry';
 import logger from './logger';
 import { pool } from './db/client';
 import { ensureDatabaseExists, runMigrations } from './db/runMigration';
@@ -66,8 +68,21 @@ setupRoutes(app);
 // Global error handler (must be registered after routes)
 app.use(unexpectedErrorHandler);
 
-app.get('/{*splat}', (_req, res) => {
-  res.render('index');
+app.get('/{*splat}', async (_req, res) => {
+  let appTitle = 'Tenjo';
+  let faviconHref = '/logo.svg';
+  try {
+    const branding = await globalSettingService.getBrandingSettings();
+    if (branding.appTitle) {
+      appTitle = branding.appTitle;
+    }
+    if (branding.faviconFilename) {
+      faviconHref = `/api/upload/artifacts/${branding.faviconFilename}`;
+    }
+  } catch (err) {
+    logger.warn('Failed to load branding for index render', { error: err });
+  }
+  res.render('index', { appTitle, faviconHref });
 });
 
 // Only start server if not in test environment
@@ -94,6 +109,7 @@ if (process.env.NODE_ENV !== 'test') {
     }
 
     await toolApprovalEmitter.start();
+    await generationAbortRegistry.start();
     app.listen(port, host, () => {
       logger.info(`Server running on ${host}:${port}`);
     });

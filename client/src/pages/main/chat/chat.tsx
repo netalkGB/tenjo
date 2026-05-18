@@ -4,7 +4,8 @@ import {
   AssistantMessageSection,
   ChatSkeleton,
   ChatTitleHeader,
-  ChatStatusLine
+  ChatStatusLine,
+  ScrollToBottomButton
 } from '@/components/chat';
 import type { ChatStatus } from '@/components/chat';
 import { useLocation, useLoaderData } from 'react-router';
@@ -17,10 +18,15 @@ import {
   ThreadMessagesResponse,
   getBranchStatus,
   switchBranch,
-  approveToolCall
+  approveToolCall,
+  stopGeneration
 } from '@/api/server/chat';
 import { upsertToolApprovalRule } from '@/api/server/settings';
-import type { ToolCallEvent } from '@/api/server/chat';
+import type {
+  ToolCallEvent,
+  ToolCallStreamEvent,
+  SubAgentActivityEvent
+} from '@/api/server/chat';
 import { useHistory } from '@/hooks/useHistory';
 import { useSettings } from '@/contexts/settings-context';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
@@ -34,6 +40,15 @@ import { convertThreadMessages } from './messageConverter';
 interface LoaderData {
   threadId: string;
   data: Promise<ThreadMessagesResponse>;
+}
+
+const CODE_EXECUTION_TOOL_NAME = 'tenjo_execute_code';
+
+function resolveToolCallStatus(event: ToolCallEvent): ChatStatus {
+  if (event.type !== 'calling') return null;
+  return event.toolName === CODE_EXECUTION_TOOL_NAME
+    ? 'executingCode'
+    : 'toolExecuting';
 }
 
 export function Chat() {
@@ -60,8 +75,14 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   } = use(dataPromise);
   const location = useLocation();
   const { reload } = useHistory();
-  const { activeModelId, enabledTools, selectedKnowledge, toggleKnowledge } =
-    useSettings();
+  const {
+    activeModelId,
+    enabledTools,
+    selectedKnowledge,
+    toggleKnowledge,
+    executeCodeEnabled,
+    webSearchEnabled
+  } = useSettings();
   const { openDialog } = useDialog();
   const { t } = useTranslation();
   const [{ messages }, dispatch] = useReducer(chatReducer, initialChatState);
@@ -72,24 +93,61 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   const hasProcessedInitialMessage = useRef(false);
   const [first, setFirst] = useState<boolean>(true);
   const [chatStatus, setChatStatus] = useState<ChatStatus>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isStreaming = messages.some(msg => msg.isStreaming);
   const isLocked = isStreaming || isGeneratingLocked;
 
-  function handleStopStreaming() {
+  function scrollToBottom() {
+    virtuosoRef.current?.scrollToIndex({
+      index: 'LAST',
+      align: 'end',
+      behavior: 'smooth'
+    });
+  }
+
+  async function handleStopStreaming() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setChatStatus(null);
+    setIsGeneratingLocked(false);
     dispatch({ type: ChatActionType.STOP_STREAMING });
+    // Tell the server to abort the generation. SSE close alone no longer
+    // cancels — that's what lets the answer survive navigation/reload.
+    try {
+      await stopGeneration(threadId);
+    } catch {
+      // UI is already stopped; ignore network failures here.
+    }
   }
 
   // Update state when initialMessages changes.
   useEffect(() => {
+    const baseMessages = convertThreadMessages(initialMessages);
+    // When the thread is generating in the background (e.g. user navigated
+    // away mid-stream and came back), the assistant message isn't in the
+    // DB yet. Show a placeholder streaming bubble so the UI matches what
+    // the server is doing — the polling effect below will replace it once
+    // the assistant message lands.
+    const messages = initialIsGenerating
+      ? [
+          ...baseMessages,
+          {
+            type: 'assistant' as const,
+            content: '',
+            isStreaming: true,
+            parentMessageId: undefined,
+            contentParts: []
+          }
+        ]
+      : baseMessages;
     dispatch({
       type: ChatActionType.SET_MESSAGES,
-      payload: convertThreadMessages(initialMessages)
+      payload: messages
     });
     setChatTitle(initialTitle);
     setChatPinned(initialPinned);
@@ -101,6 +159,40 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
       virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'auto' });
     }, 100);
   }, [initialMessages, initialTitle, initialPinned, initialIsGenerating]);
+
+  // Poll for completion when we entered a thread that was already generating
+  // server-side. We don't have a live SSE in this case (the original one is
+  // owned by a now-unmounted component instance), so just refetch periodically
+  // until generation finishes, then swap in the final messages from the DB.
+  // For locally-initiated sends initialIsGenerating is false, so this effect
+  // doesn't run there.
+  useEffect(() => {
+    if (!isGeneratingLocked) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const response = await getThreadMessages(threadId);
+        if (cancelled) return;
+        if (!response.isGenerating) {
+          dispatch({
+            type: ChatActionType.SET_MESSAGES,
+            payload: convertThreadMessages(response.messages)
+          });
+          setChatTitle(response.title);
+          setChatPinned(response.pinned);
+          setIsGeneratingLocked(false);
+        }
+      } catch {
+        // Transient errors are fine; the next tick will retry.
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isGeneratingLocked, threadId]);
 
   // Function to update branch info (only for specified message IDs).
   async function updateBranchStatusForMessages(
@@ -301,7 +393,6 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
             setChatStatus('analyzingImages');
           },
           onComplete: (
-            _title?: string,
             userMessageId?: string,
             assistantMessageId?: string,
             model?: string,
@@ -324,14 +415,22 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
             }, 0);
           },
           onToolCall: (event: ToolCallEvent) => {
-            setChatStatus(event.type === 'calling' ? 'toolExecuting' : null);
+            setChatStatus(resolveToolCallStatus(event));
             handleToolCallEvent(event);
+          },
+          onToolCallStream: (event: ToolCallStreamEvent) => {
+            handleToolCallStreamEvent(event);
+          },
+          onSubAgentActivity: (event: SubAgentActivityEvent) => {
+            handleSubAgentActivityEvent(event);
           }
         },
         activeModelId || undefined,
         [...enabledTools],
         imageUrls,
-        selectedKnowledge.size > 0 ? [...selectedKnowledge] : undefined
+        selectedKnowledge.size > 0 ? [...selectedKnowledge] : undefined,
+        executeCodeEnabled,
+        webSearchEnabled
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -367,6 +466,20 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
   function handleToolCallEvent(event: ToolCallEvent) {
     dispatch({
       type: ChatActionType.UPDATE_TOOL_CALL,
+      payload: event
+    });
+  }
+
+  function handleToolCallStreamEvent(event: ToolCallStreamEvent) {
+    dispatch({
+      type: ChatActionType.UPDATE_TOOL_CALL_STREAM,
+      payload: event
+    });
+  }
+
+  function handleSubAgentActivityEvent(event: SubAgentActivityEvent) {
+    dispatch({
+      type: ChatActionType.UPDATE_SUB_AGENT_ACTIVITY,
       payload: event
     });
   }
@@ -471,8 +584,12 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           onGeneratingTitle: () => {
             setChatStatus('generatingTitle');
           },
+          onTitle: (title: string) => {
+            setChatStatus(null);
+            setChatTitle(title);
+            reload();
+          },
           onComplete: (
-            title?: string,
             userMessageId?: string,
             assistantMessageId?: string,
             model?: string,
@@ -484,21 +601,24 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
               type: ChatActionType.COMPLETE_STREAMING,
               payload: { userMessageId, assistantMessageId, model, provider }
             });
-
-            if (title) {
-              setChatTitle(title);
-              reload();
-            }
           },
           onToolCall: (event: ToolCallEvent) => {
-            setChatStatus(event.type === 'calling' ? 'toolExecuting' : null);
+            setChatStatus(resolveToolCallStatus(event));
             handleToolCallEvent(event);
+          },
+          onToolCallStream: (event: ToolCallStreamEvent) => {
+            handleToolCallStreamEvent(event);
+          },
+          onSubAgentActivity: (event: SubAgentActivityEvent) => {
+            handleSubAgentActivityEvent(event);
           }
         },
         activeModelId || undefined,
         [...enabledTools],
         imageUrls.length > 0 ? imageUrls : undefined,
-        knowledgeIds.length > 0 ? knowledgeIds : undefined
+        knowledgeIds.length > 0 ? knowledgeIds : undefined,
+        executeCodeEnabled,
+        webSearchEnabled
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -548,8 +668,10 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           style={{ height: '100%' }}
           data={messages}
           followOutput="smooth"
+          atBottomStateChange={setIsAtBottom}
+          atBottomThreshold={32}
           itemContent={(index, message) => (
-            <div className="p-6 w-[85%] mx-auto">
+            <div className="px-4 py-4 w-full mx-auto md:p-6 md:w-[85%]">
               {message.type === 'user' ? (
                 <UserMessageSection
                   message={message.content}
@@ -557,8 +679,21 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                   currentCount={message.currentCount ?? 1}
                   totalCount={message.totalCount ?? 1}
                   isStreaming={isLocked}
+                  editing={
+                    editingMessageId !== null && editingMessageId === message.id
+                  }
+                  editValue={editDraft}
+                  onEditStart={() => {
+                    if (message.id) {
+                      setEditingMessageId(message.id);
+                      setEditDraft(message.content);
+                    }
+                  }}
+                  onEditChange={setEditDraft}
+                  onEditCancel={() => setEditingMessageId(null)}
                   onSave={(editedMessage: string) => {
                     if (message.id) {
+                      setEditingMessageId(null);
                       handleEditMessage(
                         message.id,
                         editedMessage,
@@ -588,7 +723,14 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                     const hasContent = !!message.content;
                     const hasThinking = !!message.thinkingContent;
                     const hasToolCalls = !!message.toolCalls?.length;
-                    if (!hasContent && !hasThinking && !hasToolCalls)
+                    const hasSubAgentActivity =
+                      !!message.subAgentActivities?.length;
+                    if (
+                      !hasContent &&
+                      !hasThinking &&
+                      !hasToolCalls &&
+                      !hasSubAgentActivity
+                    )
                       return null;
 
                     // Find the parent (user message) of this assistant message.
@@ -599,6 +741,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                     return (
                       <AssistantMessageSection
                         message={message.content}
+                        messageId={message.id}
                         thinkingContent={message.thinkingContent}
                         modelName={message.model}
                         providerType={message.provider}
@@ -606,6 +749,7 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                         totalCount={parentMessage?.totalCount ?? 1}
                         isStreaming={isLocked || message.isStreaming}
                         contentParts={message.contentParts}
+                        subAgentActivities={message.subAgentActivities}
                         toolCalls={message.toolCalls?.map(tc =>
                           tc.status === 'pendingApproval'
                             ? {
@@ -640,9 +784,10 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
                       />
                     );
                   })()}
-                  {index === messages.length - 1 && chatStatus && (
-                    <ChatStatusLine status={chatStatus} />
-                  )}
+                  {index === messages.length - 1 &&
+                    (chatStatus || message.isStreaming) && (
+                      <ChatStatusLine status={chatStatus ?? 'processing'} />
+                    )}
                 </>
               )}
             </div>
@@ -650,12 +795,20 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         />
       }
       footer={
-        <div className="bg-background">
-          <div className="p-6 w-[85%] mx-auto">
+        <div className="relative bg-background">
+          {!isAtBottom && messages.length > 0 && (
+            <div className="pointer-events-none absolute -top-12 left-0 right-0 flex justify-center">
+              <ScrollToBottomButton
+                onClick={scrollToBottom}
+                className="pointer-events-auto"
+              />
+            </div>
+          )}
+          <div className="px-4 py-4 w-full mx-auto md:p-6 md:w-[85%]">
             <ChatInput
               onSendMessage={handleSendMessage}
               isStreaming={isLocked}
-              isGeneratingLocked={isGeneratingLocked && !isStreaming}
+              isGeneratingLocked={isGeneratingLocked}
               onStop={handleStopStreaming}
               selectedKnowledge={selectedKnowledge}
               onToggleKnowledge={toggleKnowledge}

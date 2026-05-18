@@ -16,7 +16,6 @@ vi.mock('../../utils/passwordHasher', () => ({
 
 vi.mock('../../utils/validation', () => ({
   validateUserName: vi.fn(),
-  validateEmail: vi.fn(),
   validateFullName: vi.fn(),
   validatePassword: vi.fn()
 }));
@@ -24,7 +23,6 @@ vi.mock('../../utils/validation', () => ({
 import { hashPassword } from '../../utils/passwordHasher';
 import {
   validateUserName,
-  validateEmail,
   validateFullName,
   validatePassword
 } from '../../utils/validation';
@@ -98,7 +96,6 @@ describe('RegistrationService', () => {
 
     // Default: all validations pass
     (validateUserName as Mock).mockReturnValue(null);
-    (validateEmail as Mock).mockReturnValue(null);
     (validateFullName as Mock).mockReturnValue(null);
     (validatePassword as Mock).mockReturnValue([]);
   });
@@ -128,7 +125,6 @@ describe('RegistrationService', () => {
     const validParams = {
       fullName: 'New User',
       userName: 'newuser',
-      email: 'new@example.com',
       password: 'StrongPass1!'
     };
 
@@ -137,7 +133,6 @@ describe('RegistrationService', () => {
       beforeEach(() => {
         userRepo.existsAdmin.mockResolvedValue(false);
         userRepo.findByUserName.mockResolvedValue(undefined);
-        userRepo.findByEmail.mockResolvedValue(undefined);
         (hashPassword as Mock).mockResolvedValue('$argon2id$hashed');
         userRepo.create.mockResolvedValue(makeUser({ id: 'new-user-id' }));
       });
@@ -148,7 +143,7 @@ describe('RegistrationService', () => {
         expect(userRepo.create).toHaveBeenCalledWith({
           full_name: 'New User',
           user_name: 'newuser',
-          email: 'new@example.com',
+          email: null,
           password: '$argon2id$hashed',
           user_role: 'admin'
         });
@@ -164,7 +159,6 @@ describe('RegistrationService', () => {
       it('should set full_name to null when fullName is not provided', async () => {
         await service.register({
           userName: 'newuser',
-          email: 'new@example.com',
           password: 'StrongPass1!'
         });
 
@@ -179,7 +173,6 @@ describe('RegistrationService', () => {
       beforeEach(() => {
         userRepo.existsAdmin.mockResolvedValue(true);
         userRepo.findByUserName.mockResolvedValue(undefined);
-        userRepo.findByEmail.mockResolvedValue(undefined);
         (hashPassword as Mock).mockResolvedValue('$argon2id$hashed');
         userRepo.create.mockResolvedValue(
           makeUser({ id: 'new-user-id', user_role: 'standard' })
@@ -287,14 +280,6 @@ describe('RegistrationService', () => {
         );
       });
 
-      it('should throw RegistrationValidationError for invalid email', async () => {
-        (validateEmail as Mock).mockReturnValue('register_email_invalid');
-
-        await expect(service.register(validParams)).rejects.toThrow(
-          RegistrationValidationError
-        );
-      });
-
       it('should throw RegistrationValidationError for invalid fullName', async () => {
         (validateFullName as Mock).mockReturnValue(
           'register_full_name_too_long'
@@ -350,9 +335,8 @@ describe('RegistrationService', () => {
           RegistrationValidationError
         );
 
-        // Should not proceed to email validation or repo calls
+        // Should not proceed to repo calls
         expect(userRepo.findByUserName).not.toHaveBeenCalled();
-        expect(userRepo.findByEmail).not.toHaveBeenCalled();
         expect(userRepo.create).not.toHaveBeenCalled();
       });
     });
@@ -381,38 +365,6 @@ describe('RegistrationService', () => {
           'register_user_name_already_exists'
         );
       });
-
-      it('should throw RegistrationDuplicateError for duplicate email', async () => {
-        userRepo.findByUserName.mockResolvedValue(undefined);
-        userRepo.findByEmail.mockResolvedValue(
-          makeUser({ email: 'new@example.com' })
-        );
-
-        await expect(service.register(validParams)).rejects.toThrow(
-          RegistrationDuplicateError
-        );
-
-        userRepo.findByEmail.mockResolvedValue(
-          makeUser({ email: 'new@example.com' })
-        );
-
-        await expect(service.register(validParams)).rejects.toThrow(
-          'register_email_already_exists'
-        );
-      });
-
-      it('should check userName duplicate before email duplicate', async () => {
-        userRepo.findByUserName.mockResolvedValue(
-          makeUser({ user_name: 'newuser' })
-        );
-
-        await expect(service.register(validParams)).rejects.toThrow(
-          'register_user_name_already_exists'
-        );
-
-        // Should not check email when userName is already duplicate
-        expect(userRepo.findByEmail).not.toHaveBeenCalled();
-      });
     });
 
     // --- Password hashing ---
@@ -420,7 +372,6 @@ describe('RegistrationService', () => {
       beforeEach(() => {
         userRepo.existsAdmin.mockResolvedValue(false);
         userRepo.findByUserName.mockResolvedValue(undefined);
-        userRepo.findByEmail.mockResolvedValue(undefined);
         userRepo.create.mockResolvedValue(makeUser({ id: 'new-user-id' }));
       });
 

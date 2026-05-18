@@ -1,8 +1,16 @@
 # Tenjo
 
-A self-hosted AI chat interface with support for multiple providers (LM Studio, Ollama) and MCP (Model Context Protocol).
+A self-hosted AI chat interface with support for multiple providers (LM Studio, Ollama), MCP (Model Context Protocol), web search, code execution, and HTML preview.
 
-![Screenshot](https://github.com/user-attachments/assets/d9bcce30-b0e3-4098-83bd-054e2fd98550)
+<table align="center">
+  <tr>
+    <td colspan="2" align="center"><img width="600" alt="Screenshot" src="https://github.com/user-attachments/assets/7fbdc9fa-9785-4be3-97b8-4ab28b1053f7" /></td>
+  </tr>
+  <tr>
+    <td><img width="450" alt="Screenshot" src="https://github.com/user-attachments/assets/f82ce2d3-a566-40e9-8804-38a5ac53ecd6" /></td>
+    <td><img width="450" alt="Screenshot" src="https://github.com/user-attachments/assets/3c81b0d9-28df-4f31-836e-ad4d396b380a" /></td>
+  </tr>
+</table>
 
 ## Requirements
 
@@ -13,8 +21,18 @@ A self-hosted AI chat interface with support for multiple providers (LM Studio, 
 
 ### 1. Install dependencies
 
+**If you plan to use the browser agent (web search feature):**
+
 ```bash
 npm run setup
+```
+
+This installs all dependencies and also installs the Chromium browser required by the browser agent.
+
+**If you do not need the browser agent:**
+
+```bash
+npm ci
 ```
 
 ### 2. Configure environment
@@ -68,9 +86,6 @@ The connected model must support vision. Use a vision-capable model if you want 
 
 **MCP tools are not working.**
 The connected model must support function calling. MCP tool calling will not work with models that do not support it. Even with supported models, tool calls may not work well depending on the model's capability.
-
-**What is the email address at registration used for?**
-It is only used as an alternative to the username when logging in.
 
 ## License
 

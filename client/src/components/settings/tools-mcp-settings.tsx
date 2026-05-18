@@ -409,7 +409,7 @@ export function ToolsMcpSettings() {
       )}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>{t('settings_mcp_servers')}</CardTitle>
           {isAdmin && (
             <Button
@@ -477,15 +477,17 @@ export function ToolsMcpSettings() {
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-muted-foreground truncate">
-                      <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium mr-2">
+                    <div className="text-sm text-muted-foreground flex items-center gap-2 min-w-0">
+                      <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium shrink-0">
                         {config.type === 'http'
                           ? 'HTTP'
                           : isOAuth
                             ? 'OAuth'
                             : 'Stdio'}
                       </span>
-                      {getMcpServerSummary(config)}
+                      <span className="truncate min-w-0">
+                        {getMcpServerSummary(config)}
+                      </span>
                     </div>
                   </div>
                   {isAdmin && (
@@ -592,11 +594,11 @@ export function ToolsMcpSettings() {
                   className="space-y-2"
                   data-testid="settings-mcp-tool-approval-server"
                 >
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-sm font-medium text-muted-foreground">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <span className="text-sm font-medium text-muted-foreground break-all">
                       {serverName}
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
                         variant="ghost"
@@ -645,11 +647,13 @@ export function ToolsMcpSettings() {
                     return (
                       <div
                         key={tool}
-                        className="flex items-center justify-between border rounded-md p-3"
+                        className="flex flex-wrap items-center justify-between gap-2 border rounded-md p-3"
                         data-testid="settings-mcp-tool-approval-item"
                       >
-                        <span className="text-sm font-mono">{tool}</span>
-                        <div className="flex gap-2">
+                        <span className="text-sm font-mono break-all min-w-0">
+                          {tool}
+                        </span>
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             size="sm"
                             variant={

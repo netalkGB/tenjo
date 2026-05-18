@@ -1,5 +1,7 @@
 export {
   type ToolCallEvent,
+  type ToolCallStreamEvent,
+  type SubAgentActivityEvent,
   type SSEChunk,
   type ApiThread,
   type GetThreadsResponse,
@@ -21,7 +23,8 @@ export {
 export {
   getThreadMessages,
   editAndResendMessage,
-  sendMessageToThread
+  sendMessageToThread,
+  stopGeneration
 } from './messages';
 export { getBranchStatus, switchBranch } from './branches';
 export { approveToolCall } from './tools';

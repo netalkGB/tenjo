@@ -1,4 +1,5 @@
 import { createContext, useState, ReactNode } from 'react';
+import { generateRandomId } from '@/lib/generateRandomId';
 
 /* eslint-disable react-refresh/only-export-components */
 
@@ -46,7 +47,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [dialogs, setDialogs] = useState<DialogConfig[]>([]);
 
   const openDialog = (newConfig: DialogOpenConfig): string => {
-    const id = crypto.randomUUID();
+    const id = generateRandomId();
     const close = () => setDialogs(prev => prev.filter(d => d.id !== id));
     const dialog: DialogConfig = {
       id,

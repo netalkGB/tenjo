@@ -33,9 +33,16 @@ export interface ModelConfig {
   token: string | null;
 }
 
+export interface BrandingSettings {
+  appTitle?: string;
+  logoFilename?: string;
+  faviconFilename?: string;
+}
+
 export interface GlobalSettings {
   model?: ModelSettings;
   mcpServers?: McpServersConfig;
+  branding?: BrandingSettings;
 }
 
 export interface UserSettings {
@@ -44,6 +51,8 @@ export interface UserSettings {
   theme?: string;
   selectedKnowledgeIds?: string[];
   disabledMcpTools?: string[];
+  executeCodeEnabled?: boolean;
+  webSearchEnabled?: boolean;
 }
 
 interface GlobalSettingRow {

@@ -72,11 +72,12 @@ export function ToolPicker({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="h-9 gap-1.5 cursor-pointer"
+          className="h-9 w-auto px-2 gap-1 @sm:gap-1.5 cursor-pointer"
+          aria-label={t('tools')}
           data-testid="chat-input-mcp-tools-button"
         >
           <Cable className="w-3.5 h-3.5" />
-          <span className="text-xs">
+          <span className="text-xs hidden @sm:inline">
             {enabledCount}/{totalCount}
           </span>
           {hasErrors && (

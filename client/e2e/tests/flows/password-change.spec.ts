@@ -7,12 +7,10 @@ const NEW_PASSWORD = 'N3wP@ssw0rd!';
 
 const ADMIN2_FULL_NAME = 'pwChangeAdmin';
 const ADMIN2_USER_NAME = 'pwChangeAdmin';
-const ADMIN2_EMAIL = 'pw-change-admin@example.invalid';
 const ADMIN2_PASSWORD = 'P@ssw0rd';
 
 const NORMAL2_FULL_NAME = 'pwChangeNormal';
 const NORMAL2_USER_NAME = 'pwChangeNormal';
-const NORMAL2_EMAIL = 'pw-change-normal@example.invalid';
 const NORMAL2_PASSWORD = 'P@ssw0rd';
 
 async function changePassword(
@@ -69,7 +67,6 @@ test.describe
         {
           fullName: ADMIN2_FULL_NAME,
           userName: ADMIN2_USER_NAME,
-          email: ADMIN2_EMAIL,
           password: ADMIN2_PASSWORD,
           role: 'admin'
         }
@@ -106,7 +103,6 @@ test.describe
         {
           fullName: NORMAL2_FULL_NAME,
           userName: NORMAL2_USER_NAME,
-          email: NORMAL2_EMAIL,
           password: NORMAL2_PASSWORD
         }
       );

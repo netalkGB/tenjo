@@ -14,6 +14,7 @@ import {
   knowledgeService,
   fileUploadService
 } from '../../services/registry';
+import { systemPromptBuilder } from '../../factories/SystemPromptBuilder';
 import { createImageAnalysisProvider } from '../../services/ImageAnalysisCacheService';
 import {
   type ErrorResponse,
@@ -26,13 +27,25 @@ import type { ModelConfig } from '../../repositories/GlobalSettingRepository';
 import {
   type McpClientManager,
   type MessageRequest,
-  ImageAnalysisProcessor
+  type ToolDefinitionRequest,
+  type LocalToolHandler,
+  type Tool,
+  ImageAnalysisProcessor,
+  bundleTools,
+  codeExecutionTool,
+  BrowserResearchAgent,
+  createBrowserDelegateTool
 } from 'tenjo-chat-engine';
 import {
   createChatClient,
   createChatApiClient
 } from '../../factories/chatClientFactory';
+import {
+  createSubAgentActivityRelay,
+  type SubAgentActivityWriter
+} from '../../services/SubAgentActivityRelay';
 import { toolApprovalEmitter } from '../../services/ToolApprovalEmitter';
+import { generationAbortRegistry } from '../../services/GenerationAbortRegistry';
 import {
   ThreadService,
   ThreadNotFoundError,
@@ -57,7 +70,17 @@ export const chatRouter = express.Router();
  */
 function createStreamWriter(res: express.Response): StreamWriter {
   return {
-    write: (data: string) => res.write(data),
+    write: (data: string) => {
+      // Once the client has gone away the underlying socket is gone too;
+      // writing would emit ERR_STREAM_DESTROYED. Generation continues and
+      // we still want to drive it to completion so the answer is persisted.
+      if (res.writableEnded || res.destroyed) return;
+      try {
+        res.write(data);
+      } catch {
+        // Swallow post-disconnect write errors — the response is gone.
+      }
+    },
     onClose: (handler: () => void) => res.on('close', handler)
   };
 }
@@ -158,6 +181,95 @@ interface SendMessageRequest {
     enabledTools?: string[];
     imageUrls?: string[];
     knowledgeIds?: string[];
+    executeCodeEnabled?: boolean;
+    webSearchEnabled?: boolean;
+  };
+}
+
+interface BuildLocalToolsResult {
+  definitions: ToolDefinitionRequest[];
+  handlers: Map<string, LocalToolHandler>;
+  cleanup: () => Promise<void>;
+}
+
+interface BuildLocalToolsOptions {
+  executeCodeEnabled?: boolean;
+  webSearchEnabled?: boolean;
+  modelConfig: ModelConfig;
+  /**
+   * Called by the web-search sub-agent every time it kicks off / finishes a
+   * tool whose target page we want to surface in the UI (search query or
+   * navigated URL). Ignored when web search is disabled.
+   */
+  subAgentActivityWriter: SubAgentActivityWriter;
+}
+
+function buildLocalTools(
+  options: BuildLocalToolsOptions
+): BuildLocalToolsResult {
+  const tools: Tool[] = [];
+  const cleanups: Array<() => Promise<void>> = [];
+
+  if (options.executeCodeEnabled) {
+    tools.push(codeExecutionTool);
+  }
+
+  if (options.webSearchEnabled) {
+    // Each request gets its own private Chromium so concurrent chats do not
+    // share cookies / scroll position. Closed in `cleanup`.
+    const subAgent = new BrowserResearchAgent({
+      apiClientFactory: (subTools) =>
+        createChatApiClient(options.modelConfig, subTools),
+      browserConfig: {
+        headless: true,
+        headlessMode: 'new',
+        userAgent: 'Tenjo Browser Agent',
+        requestDelay: { min: 500, max: 3000 }
+      },
+      // Hard 200s wall-clock budget per delegation. Past this the sub-agent
+      // returns whatever it has so far with a "(Note: research timed out
+      // after 200s)" suffix appended to the answer.
+      timeoutMs: 200000
+    });
+    createSubAgentActivityRelay(subAgent, options.subAgentActivityWriter);
+    // Cap the delegate tool to ONE invocation per assistant turn — back-to-back
+    // tenjo_browser_agent calls in the same response are wasteful (the
+    // sub-agent already does its own internal multi-search loop) and confuse
+    // the parent. The lock resets per request because `buildLocalTools` is
+    // called fresh on every chat send.
+    const delegateTool = createBrowserDelegateTool(subAgent);
+    let delegateCallCount = 0;
+    tools.push({
+      definition: delegateTool.definition,
+      handler: async (args) => {
+        delegateCallCount++;
+        if (delegateCallCount > 1) {
+          return {
+            error:
+              'tenjo_browser_agent has already been called once this turn. Do NOT call it again. Use the answer from the previous call to reply to the user. If more research is needed, the user will follow up and you can call it again on the next turn.'
+          };
+        }
+        return delegateTool.handler(args);
+      }
+    });
+    cleanups.push(async () => {
+      try {
+        await subAgent.close();
+      } catch (error) {
+        logger.warn('Failed to close browser sub-agent cleanly', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    });
+  }
+
+  const bundle = bundleTools(tools);
+  return {
+    definitions: bundle.definitions,
+    handlers: bundle.handlers,
+    cleanup: async () => {
+      await Promise.all(cleanups.map((fn) => fn()));
+    }
   };
 }
 
@@ -172,6 +284,9 @@ chatRouter.post(
     const sessionUser = req.user as SessionUser;
 
     let mcpClientManager: McpClientManager | undefined;
+    let cleanupLocalTools: () => Promise<void> = async () => {};
+    const abortController = new AbortController();
+    generationAbortRegistry.register(threadId, abortController);
 
     try {
       const thread = await threadService.verifyThreadOwnership(
@@ -193,7 +308,22 @@ chatRouter.post(
         );
       mcpClientManager = mcpManager;
 
-      const tools = [...mcpTools];
+      const subAgentActivityWriter: SubAgentActivityWriter = {
+        emit: (event) => {
+          if (res.writableEnded || res.destroyed) return;
+          res.write(`data: ${JSON.stringify({ subAgentActivity: event })}\n\n`);
+        }
+      };
+
+      const localToolsResult = buildLocalTools({
+        executeCodeEnabled: body.executeCodeEnabled,
+        webSearchEnabled: body.webSearchEnabled,
+        modelConfig,
+        subAgentActivityWriter
+      });
+      cleanupLocalTools = localToolsResult.cleanup;
+      const tools = [...mcpTools, ...localToolsResult.definitions];
+      const localToolHandlers = localToolsResult.handlers;
 
       const knowledgeContent = await resolveKnowledgeContent(
         body.knowledgeIds,
@@ -216,11 +346,42 @@ chatRouter.post(
       const chatClient = createChatClient({
         config: modelConfig,
         tools,
-        knowledgeContent,
+        systemPrompt: systemPromptBuilder.build({
+          knowledgeContent,
+          executeCodeEnabled: body.executeCodeEnabled,
+          webSearchEnabled: body.webSearchEnabled
+        }),
         contextMessages
       });
 
       const shouldGenerateTitle = !body.parentMessageId;
+
+      // Defer the title-generation request until the message stream has
+      // started receiving output. Local model servers (e.g. LM Studio) load
+      // a fresh model instance per concurrent connection, so firing both
+      // requests at once would load the same model twice. Waiting for the
+      // first chunk ensures the model is already resident when the title
+      // request arrives, while still keeping title generation overlapped
+      // with the remaining message stream.
+      let triggerTitleStart: () => void = () => {};
+      const titleStartGate = new Promise<void>((resolve) => {
+        triggerTitleStart = resolve;
+      });
+
+      let titleSettled = false;
+      const titlePromise: Promise<string | undefined> = shouldGenerateTitle
+        ? titleStartGate
+            .then(() => messageService.generateTitle(body.message, modelConfig))
+            .catch((error) => {
+              logger.warn('Title generation failed', {
+                error: error instanceof Error ? error.message : String(error)
+              });
+              return undefined;
+            })
+            .finally(() => {
+              titleSettled = true;
+            })
+        : Promise.resolve(undefined);
 
       const result = await messageService.processMessageStream({
         threadId: thread.id,
@@ -231,26 +392,36 @@ chatRouter.post(
         mcpClientManager,
         chatClient,
         writer: createStreamWriter(res),
-        modelConfig
+        modelConfig,
+        localToolHandlers,
+        onFirstActivity: shouldGenerateTitle ? triggerTitleStart : undefined,
+        abortSignal: abortController.signal
       });
 
-      // Generate title before sending done event (chat chunks are already sent)
-      let title: string | undefined;
+      // Safety net: if the stream produced no chunks at all, still kick off
+      // title generation so we don't leave a dangling promise.
+      triggerTitleStart();
+
+      // Emit `done` immediately so the client can release the input lock
+      // and let the user start typing the next message — title generation
+      // proceeds independently and is delivered as a separate event below.
+      res.write(
+        `data: ${JSON.stringify({ done: true, userMessageId: result.userMessageId, assistantMessageId: result.assistantMessageId, model: modelConfig.model, provider: modelConfig.type })}\n\n`
+      );
+
       if (shouldGenerateTitle) {
-        res.write(`data: ${JSON.stringify({ generatingTitle: true })}\n\n`);
-        const generatedTitle = await messageService.generateTitle(
-          body.message,
-          modelConfig
-        );
+        if (!titleSettled) {
+          res.write(`data: ${JSON.stringify({ generatingTitle: true })}\n\n`);
+        }
+        const generatedTitle = await titlePromise;
         const updated = await threadRepo.update(thread.id, {
           title: generatedTitle || '-'
         });
-        title = updated?.title;
+        if (updated?.title) {
+          res.write(`data: ${JSON.stringify({ title: updated.title })}\n\n`);
+        }
       }
 
-      res.write(
-        `data: ${JSON.stringify({ done: true, title, userMessageId: result.userMessageId, assistantMessageId: result.assistantMessageId, model: modelConfig.model, provider: modelConfig.type })}\n\n`
-      );
       res.end();
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -263,8 +434,10 @@ chatRouter.post(
         res.end();
       }
     } finally {
+      generationAbortRegistry.unregister(threadId, abortController);
       await threadService.releaseGeneratingLock(threadId);
       mcpClientManager?.close();
+      await cleanupLocalTools();
     }
   })
 );
@@ -281,6 +454,8 @@ interface EditMessageRequest {
     enabledTools?: string[];
     imageUrls?: string[];
     knowledgeIds?: string[];
+    executeCodeEnabled?: boolean;
+    webSearchEnabled?: boolean;
   };
 }
 
@@ -299,6 +474,9 @@ chatRouter.post(
           ReturnType<typeof mcpToolService.initializeMcpConnection>
         >['mcpClientManager']
       | undefined;
+    let cleanupLocalTools: () => Promise<void> = async () => {};
+    const abortController = new AbortController();
+    generationAbortRegistry.register(threadId, abortController);
 
     try {
       await threadService.verifyThreadOwnership(threadId, sessionUser.id);
@@ -319,7 +497,22 @@ chatRouter.post(
         );
       mcpClientManager = mcpManager;
 
-      const tools = [...mcpTools];
+      const subAgentActivityWriter: SubAgentActivityWriter = {
+        emit: (event) => {
+          if (res.writableEnded || res.destroyed) return;
+          res.write(`data: ${JSON.stringify({ subAgentActivity: event })}\n\n`);
+        }
+      };
+
+      const localToolsResult = buildLocalTools({
+        executeCodeEnabled: body.executeCodeEnabled,
+        webSearchEnabled: body.webSearchEnabled,
+        modelConfig,
+        subAgentActivityWriter
+      });
+      cleanupLocalTools = localToolsResult.cleanup;
+      const tools = [...mcpTools, ...localToolsResult.definitions];
+      const localToolHandlers = localToolsResult.handlers;
 
       const knowledgeContent = await resolveKnowledgeContent(
         body.knowledgeIds,
@@ -344,7 +537,11 @@ chatRouter.post(
       const chatClient = createChatClient({
         config: modelConfig,
         tools,
-        knowledgeContent,
+        systemPrompt: systemPromptBuilder.build({
+          knowledgeContent,
+          executeCodeEnabled: body.executeCodeEnabled,
+          webSearchEnabled: body.webSearchEnabled
+        }),
         contextMessages
       });
 
@@ -357,7 +554,9 @@ chatRouter.post(
         mcpClientManager,
         chatClient,
         writer: createStreamWriter(res),
-        modelConfig
+        modelConfig,
+        localToolHandlers,
+        abortSignal: abortController.signal
       });
 
       res.write(
@@ -375,10 +574,45 @@ chatRouter.post(
         res.end();
       }
     } finally {
+      generationAbortRegistry.unregister(threadId, abortController);
       await threadService.releaseGeneratingLock(threadId);
       mcpClientManager?.close();
+      await cleanupLocalTools();
     }
   })
+);
+
+/*
+ * POST /api/chat/threads/:threadId/stop
+ * Broadcasts a stop request via Postgres NOTIFY so the instance running
+ * the generation can abort it. Closing the SSE stream alone no longer
+ * cancels — only this explicit call does.
+ */
+interface StopGenerationRequest {
+  params: { threadId: string };
+}
+
+chatRouter.post(
+  '/threads/:threadId/stop',
+  requireCsrfToken,
+  requireAuth,
+  typedHandler<StopGenerationRequest, Record<string, never> | ErrorResponse>(
+    async (req, res) => {
+      const sessionUser = req.user as SessionUser;
+      const { threadId } = req.params;
+
+      try {
+        await threadService.verifyThreadOwnership(threadId, sessionUser.id);
+        await generationAbortRegistry.requestAbort(threadId);
+        res.json({});
+      } catch (err) {
+        if (err instanceof ThreadNotFoundError) {
+          throw new HttpError(StatusCodes.NOT_FOUND, err.message);
+        }
+        throw err;
+      }
+    }
+  )
 );
 
 /*

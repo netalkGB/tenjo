@@ -53,3 +53,12 @@ export type {
 } from './schemas';
 export { getPreferences, updatePreferences } from './preferences';
 export { getCleanupStatus, startCleanup } from './cleanup';
+export {
+  getBranding,
+  updateBranding,
+  uploadBrandingLogo,
+  resetBrandingLogo,
+  uploadBrandingFavicon,
+  resetBrandingFavicon
+} from './branding';
+export type { BrandingResponse, UpdateBrandingRequest } from './schemas';

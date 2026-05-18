@@ -3,6 +3,7 @@ import { UserMessage } from './user-message';
 import { UserMessageEdit } from './user-message-edit';
 import { UserMessageActions } from './user-message-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import { ImagePreviewDialog } from './image-preview-dialog';
 
 interface UserMessageSectionProps {
@@ -12,12 +13,19 @@ interface UserMessageSectionProps {
   totalCount?: number;
   skeleton?: boolean;
   isStreaming?: boolean;
+  editing?: boolean;
+  editValue?: string;
+  onEditStart?: () => void;
+  onEditChange?: (value: string) => void;
+  onEditCancel?: () => void;
   onSave?: (editedMessage: string) => void;
   onRetry?: () => void;
   onCopy?: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
 }
+
+const noop = () => {};
 
 export function UserMessageSection({
   message = '',
@@ -26,24 +34,21 @@ export function UserMessageSection({
   totalCount = 1,
   skeleton = false,
   isStreaming = false,
+  editing = false,
+  editValue = '',
+  onEditStart,
+  onEditChange,
+  onEditCancel,
   onSave,
   onRetry,
   onCopy,
   onPrevious,
   onNext
 }: UserMessageSectionProps) {
-  const [editing, setEditing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  const handleSave = (editedMessage: string) => {
-    setEditing(false);
-    if (onSave) {
-      onSave(editedMessage);
-    }
-  };
-
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(message);
+    await copyTextToClipboard(message);
     if (onCopy) {
       onCopy();
     }
@@ -62,9 +67,10 @@ export function UserMessageSection({
   if (editing) {
     return (
       <UserMessageEdit
-        defaultValue={message}
-        onCancel={() => setEditing(false)}
-        onSave={handleSave}
+        value={editValue}
+        onChange={onEditChange ?? noop}
+        onCancel={onEditCancel ?? noop}
+        onSave={onSave ?? noop}
       />
     );
   }
@@ -89,7 +95,7 @@ export function UserMessageSection({
       <UserMessage>{message}</UserMessage>
       <UserMessageActions
         isVisible={!isStreaming}
-        onEdit={() => setEditing(true)}
+        onEdit={onEditStart}
         onRetry={onRetry}
         onCopy={handleCopy}
         onPrevious={onPrevious}

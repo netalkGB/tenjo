@@ -1,9 +1,14 @@
-import type { ToolCallInfo } from '@/components/chat';
-import type { ToolCallEvent } from '@/api/server/chat';
+import type { ToolCallInfo, SubAgentActivityInfo } from '@/components/chat';
+import type {
+  ToolCallEvent,
+  ToolCallStreamEvent,
+  SubAgentActivityEvent
+} from '@/api/server/chat';
 
 export type MessagePart =
   | { type: 'text'; content: string }
-  | { type: 'toolCall'; toolCallId: string };
+  | { type: 'toolCall'; toolCallId: string }
+  | { type: 'subAgentActivity'; activityId: string };
 
 export interface Message {
   id?: string;
@@ -19,6 +24,12 @@ export interface Message {
   model?: string | null;
   provider?: string | null;
   toolCalls?: ToolCallInfo[];
+  /**
+   * Sub-agent activity (web-search visits, etc.) attached to this assistant
+   * message. Streamed live during generation; not persisted, so on reload
+   * these are dropped along with `contentParts`.
+   */
+  subAgentActivities?: SubAgentActivityInfo[];
   contentParts?: MessagePart[];
 }
 
@@ -37,7 +48,9 @@ export enum ChatActionType {
   COMPLETE_STREAMING = 'COMPLETE_STREAMING',
   REVERT_SEND = 'REVERT_SEND',
   UPDATE_TOOL_CALL = 'UPDATE_TOOL_CALL',
-  UPDATE_TOOL_APPROVAL = 'UPDATE_TOOL_APPROVAL'
+  UPDATE_TOOL_APPROVAL = 'UPDATE_TOOL_APPROVAL',
+  UPDATE_TOOL_CALL_STREAM = 'UPDATE_TOOL_CALL_STREAM',
+  UPDATE_SUB_AGENT_ACTIVITY = 'UPDATE_SUB_AGENT_ACTIVITY'
 }
 
 export type ChatAction =
@@ -102,4 +115,12 @@ export type ChatAction =
         toolCallId: string;
         approved: boolean;
       };
+    }
+  | {
+      type: ChatActionType.UPDATE_TOOL_CALL_STREAM;
+      payload: ToolCallStreamEvent;
+    }
+  | {
+      type: ChatActionType.UPDATE_SUB_AGENT_ACTIVITY;
+      payload: SubAgentActivityEvent;
     };

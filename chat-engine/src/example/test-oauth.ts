@@ -108,16 +108,16 @@ async function createAuthenticatedTransport(): Promise<StreamableHTTPClientTrans
     // Transport started successfully but we need to return a fresh one
     // because McpClientManager.connect() will call start() again.
     await transport.close();
-    return new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL), { authProvider });
+    return new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL), {
+      authProvider,
+    });
   } catch (err: unknown) {
     if (
       err instanceof Error &&
       (err.constructor.name === 'UnauthorizedError' ||
         err.message.includes('Unauthorized'))
     ) {
-      console.log(
-        '[OAuth] Not yet authorized. Waiting for OAuth callback...'
-      );
+      console.log('[OAuth] Not yet authorized. Waiting for OAuth callback...');
 
       const authorizationCode = await startCallbackServer();
       console.log('[OAuth] Authorization code received.');
@@ -125,7 +125,9 @@ async function createAuthenticatedTransport(): Promise<StreamableHTTPClientTrans
       await transport.finishAuth(authorizationCode);
       console.log('[OAuth] Token exchange completed.');
 
-      return new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL), { authProvider });
+      return new StreamableHTTPClientTransport(new URL(MCP_SERVER_URL), {
+        authProvider,
+      });
     }
 
     throw err;
@@ -177,9 +179,15 @@ async function main() {
     console.log(`[Status] ${status}`);
   });
 
-  chatClient.onContextAdded(
+  chatClient.setToolCallStreamHandler((event) => {
+    process.stdout.write(
+      `[ToolCallStream ${event.toolName}] ${event.argumentsDelta}`
+    );
+  });
+
+  chatClient.onMessageAdded(
     (message: MessageRequest, allMessages: MessageRequest[]) => {
-      console.log('\n[Context Added Event]');
+      console.log('\n[Message Added Event]');
       console.log(`Role: ${message.role}`);
       console.log(`Content length: ${message.content?.length || 0}`);
       console.log(`Total messages: ${allMessages.length}`);

@@ -5,11 +5,9 @@ import { createUserViaInvitation } from '../../helpers/invitationCode';
 
 const NEW_ADMIN_FULL_NAME = 'admin2';
 const NEW_ADMIN_USER_NAME = 'admin2';
-const NEW_ADMIN_EMAIL = 'admin2@example.invalid';
 
 const UPDATED_FULL_NAME = 'admin3';
 const UPDATED_USER_NAME = 'admin33';
-const UPDATED_EMAIL = 'admin33@example.invalid';
 
 test.describe
   .serial('profile settings', () => {
@@ -20,7 +18,6 @@ test.describe
         {
           fullName: NEW_ADMIN_FULL_NAME,
           userName: NEW_ADMIN_USER_NAME,
-          email: NEW_ADMIN_EMAIL,
           password: ADMIN_PASSWORD,
           role: 'admin'
         }
@@ -38,9 +35,6 @@ test.describe
       await expect(
         page.getByTestId('settings-profile-user-name-input')
       ).toHaveValue(NEW_ADMIN_USER_NAME);
-      await expect(
-        page.getByTestId('settings-profile-email-input')
-      ).toHaveValue(NEW_ADMIN_EMAIL);
 
       // Update profile
       await page
@@ -49,9 +43,6 @@ test.describe
       await page
         .getByTestId('settings-profile-user-name-input')
         .fill(UPDATED_USER_NAME);
-      await page
-        .getByTestId('settings-profile-email-input')
-        .fill(UPDATED_EMAIL);
       await page.getByTestId('settings-profile-save-button').click();
 
       // Verify success message appears
@@ -70,8 +61,5 @@ test.describe
       await expect(
         page.getByTestId('settings-profile-user-name-input')
       ).toHaveValue(UPDATED_USER_NAME);
-      await expect(
-        page.getByTestId('settings-profile-email-input')
-      ).toHaveValue(UPDATED_EMAIL);
     });
   });

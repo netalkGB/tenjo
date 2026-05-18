@@ -45,6 +45,10 @@ interface SettingsContextValue {
   themeMode: ThemeMode;
   updateLocaleMode: (mode: LocaleMode) => void;
   updateThemeMode: (mode: ThemeMode) => void;
+  executeCodeEnabled: boolean;
+  toggleExecuteCodeEnabled: () => void;
+  webSearchEnabled: boolean;
+  toggleWebSearchEnabled: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -70,6 +74,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   );
   const [localeMode, setLocaleMode] = useState<LocaleMode>('auto');
   const [themeMode, setThemeModeState] = useState<ThemeMode>('auto');
+  const [executeCodeEnabled, setExecuteCodeEnabled] = useState(false);
+  const executeCodeUserOverridden = useRef(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const webSearchUserOverridden = useRef(false);
 
   const reloadModels = async () => {
     try {
@@ -94,6 +102,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     reloadModels();
   });
 
+  // Flags to skip applying loaded prefs once the user has overridden them.
+  // Without these, a slow GET /api/settings/preferences can resolve after the
+  // user changed locale/theme and silently revert the change to the previously
+  // saved value.
+  const localeUserOverridden = useRef(false);
+  const themeUserOverridden = useRef(false);
+
   const prefsInitialized = useRef(false);
   useEffect(() => {
     if (prefsInitialized.current) return;
@@ -104,6 +119,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const prefs = await getPreferences();
 
         if (
+          !localeUserOverridden.current &&
           prefs.language &&
           LOCALE_MODES.includes(prefs.language as LocaleMode)
         ) {
@@ -112,7 +128,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           setLocaleMode(mode);
         }
 
-        if (prefs.theme && THEME_MODES.includes(prefs.theme as ThemeMode)) {
+        if (
+          !themeUserOverridden.current &&
+          prefs.theme &&
+          THEME_MODES.includes(prefs.theme as ThemeMode)
+        ) {
           const mode = prefs.theme as ThemeMode;
           applyTheme(mode);
           setThemeModeState(mode);
@@ -123,6 +143,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           prefs.selectedKnowledgeIds.length > 0
         ) {
           setSelectedKnowledge(new Set(prefs.selectedKnowledgeIds));
+        }
+
+        if (
+          !executeCodeUserOverridden.current &&
+          typeof prefs.executeCodeEnabled === 'boolean'
+        ) {
+          setExecuteCodeEnabled(prefs.executeCodeEnabled);
+        }
+
+        if (
+          !webSearchUserOverridden.current &&
+          typeof prefs.webSearchEnabled === 'boolean'
+        ) {
+          setWebSearchEnabled(prefs.webSearchEnabled);
         }
       } catch {
         // Preferences are non-critical; fall back to OS/browser defaults
@@ -306,6 +340,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   const updateLocaleMode = (mode: LocaleMode) => {
+    localeUserOverridden.current = true;
     changeLocale(mode);
     setLocaleMode(mode);
     updatePreferences({ language: mode }).catch(() => {
@@ -317,7 +352,38 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const toggleExecuteCodeEnabled = () => {
+    executeCodeUserOverridden.current = true;
+    setExecuteCodeEnabled(prev => {
+      const next = !prev;
+      updatePreferences({ executeCodeEnabled: next }).catch(() => {
+        openDialog({
+          title: t('error'),
+          description: t('error_save_preferences'),
+          type: 'ok'
+        });
+      });
+      return next;
+    });
+  };
+
+  const toggleWebSearchEnabled = () => {
+    webSearchUserOverridden.current = true;
+    setWebSearchEnabled(prev => {
+      const next = !prev;
+      updatePreferences({ webSearchEnabled: next }).catch(() => {
+        openDialog({
+          title: t('error'),
+          description: t('error_save_preferences'),
+          type: 'ok'
+        });
+      });
+      return next;
+    });
+  };
+
   const updateThemeMode = (mode: ThemeMode) => {
+    themeUserOverridden.current = true;
     applyTheme(mode);
     setThemeModeState(mode);
     updatePreferences({ theme: mode }).catch(() => {
@@ -365,7 +431,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         localeMode,
         themeMode,
         updateLocaleMode,
-        updateThemeMode
+        updateThemeMode,
+        executeCodeEnabled,
+        toggleExecuteCodeEnabled,
+        webSearchEnabled,
+        toggleWebSearchEnabled
       }}
     >
       {children}

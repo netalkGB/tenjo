@@ -83,8 +83,8 @@ describe('ImageService', () => {
       );
     });
 
-    it('should throw ImageValidationError when file exceeds 10MB', async () => {
-      const largeBuffer = Buffer.alloc(10 * 1024 * 1024 + 1);
+    it('should throw ImageValidationError when file exceeds 50MB', async () => {
+      const largeBuffer = Buffer.alloc(50 * 1024 * 1024 + 1);
       largeBuffer[0] = 0xff;
       largeBuffer[1] = 0xd8;
       largeBuffer[2] = 0xff;
@@ -93,7 +93,7 @@ describe('ImageService', () => {
         ImageValidationError
       );
       await expect(service.uploadImage(largeBuffer)).rejects.toThrow(
-        'File size exceeds 10MB limit'
+        'File size exceeds 50MB limit'
       );
     });
 

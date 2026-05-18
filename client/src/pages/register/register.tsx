@@ -35,7 +35,6 @@ export function Register() {
       await register({
         fullName: data.fullName || undefined,
         userName: data.userName,
-        email: data.email,
         password: data.password,
         invitationCode: data.invitationCode
       });
@@ -46,7 +45,6 @@ export function Register() {
         registerFormRef.current?.setError(
           t(
             error.message as
-              | 'register_email_already_exists'
               | 'register_user_name_already_exists'
               | 'register_user_name_invalid'
               | 'register_invitation_code_required'

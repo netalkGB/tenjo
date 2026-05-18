@@ -16,8 +16,6 @@ export async function getKnowledgeList(search?: string): Promise<Knowledge[]> {
   try {
     const params: Record<string, string> = {};
     if (search) params.search = search;
-    // Fetch all by requesting a large page size
-    params.pageSize = '9999';
     const response = await axios.get('/api/knowledge', { params });
     const result = KnowledgePaginatedResponseSchema.parse(response.data);
     return result.entries;

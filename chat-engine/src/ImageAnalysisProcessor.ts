@@ -57,13 +57,8 @@ export class ImageAnalysisProcessor {
         const extractions = await Promise.all(
           cacheMisses.map(async (miss) => {
             try {
-              const description = await this.extractDescription(
-                miss.imagePath
-              );
-              await this.provider.cacheDescription(
-                miss.imagePath,
-                description
-              );
+              const description = await this.extractDescription(miss.imagePath);
+              await this.provider.cacheDescription(miss.imagePath, description);
               return { ...miss, cached: description };
             } catch {
               // Fallback: strip image on extraction failure
@@ -91,10 +86,9 @@ export class ImageAnalysisProcessor {
         if (!replacements.has(result.messageIndex)) {
           replacements.set(result.messageIndex, new Map());
         }
-        replacements.get(result.messageIndex)!.set(
-          result.contentIndex,
-          result.cached ?? ''
-        );
+        replacements
+          .get(result.messageIndex)!
+          .set(result.contentIndex, result.cached ?? '');
       }
 
       // Apply replacements
@@ -137,9 +131,7 @@ export class ImageAnalysisProcessor {
    * All context messages are considered "past" (the current user message
    * is not included in context messages).
    */
-  private collectImagesToAnalyze(
-    messages: MessageRequest[]
-  ): ImageToAnalyze[] {
+  private collectImagesToAnalyze(messages: MessageRequest[]): ImageToAnalyze[] {
     const images: ImageToAnalyze[] = [];
 
     for (let msgIdx = 0; msgIdx < messages.length; msgIdx++) {

@@ -2,11 +2,9 @@ import { test, expect } from '@playwright/test';
 import {
   ADMIN_FULL_NAME,
   ADMIN_USER_NAME,
-  ADMIN_EMAIL,
   ADMIN_PASSWORD,
   NORMAL_FULL_NAME,
   NORMAL_USER_NAME,
-  NORMAL_EMAIL,
   NORMAL_PASSWORD,
   SETUP_MODEL_NAME,
   SETUP_MODEL_BASE_URL,
@@ -33,8 +31,6 @@ test.describe
       await page.getByTestId('register-full-name-input').press('Tab');
       await page.getByTestId('register-user-name-input').fill(ADMIN_USER_NAME);
       await page.getByTestId('register-user-name-input').press('Tab');
-      await page.getByTestId('register-email-input').fill(ADMIN_EMAIL);
-      await page.getByTestId('register-email-input').press('Tab');
       await page.getByTestId('register-password-input').fill(ADMIN_PASSWORD);
       await page.getByTestId('register-password-input').press('Tab');
       await page
@@ -51,7 +47,6 @@ test.describe
         {
           fullName: NORMAL_FULL_NAME,
           userName: NORMAL_USER_NAME,
-          email: NORMAL_EMAIL,
           password: NORMAL_PASSWORD
         }
       );

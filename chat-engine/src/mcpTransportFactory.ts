@@ -36,7 +36,7 @@ export type McpServersConfig = Record<string, McpServerConfig>;
  * For backward compatibility, normalizes configs without a type field as stdio.
  */
 export function normalizeMcpServerConfig(
-  config: Record<string, unknown>,
+  config: Record<string, unknown>
 ): McpServerConfig {
   const type = (config.type as string) || 'stdio';
 
@@ -73,7 +73,7 @@ export function normalizeMcpServerConfig(
 async function supportsStreamableHttp(
   url: URL,
   headers?: Record<string, string>,
-  authProvider?: OAuthClientProvider,
+  authProvider?: OAuthClientProvider
 ): Promise<boolean> {
   const reqHeaders: Record<string, string> = {
     Accept: 'application/json, text/event-stream',
@@ -122,7 +122,7 @@ export async function createHttpTransportWithFallback(
   options?: {
     headers?: Record<string, string>;
     authProvider?: OAuthClientProvider;
-  },
+  }
 ): Promise<Transport> {
   const parsedUrl = new URL(url);
   const customHeaders = options?.headers;
@@ -134,7 +134,7 @@ export async function createHttpTransportWithFallback(
   const isStreamable = await supportsStreamableHttp(
     parsedUrl,
     customHeaders,
-    options?.authProvider,
+    options?.authProvider
   );
 
   if (isStreamable) {
@@ -166,11 +166,11 @@ export async function createHttpTransportWithFallback(
  * OAuth-HTTP configs must be handled separately (tokens need to be resolved first).
  */
 export async function createTransport(
-  serverConfig: McpServerConfig,
+  serverConfig: McpServerConfig
 ): Promise<Transport> {
   if (serverConfig.type === 'oauth-http') {
     throw new Error(
-      'OAuth HTTP transport requires token resolution before creation',
+      'OAuth HTTP transport requires token resolution before creation'
     );
   }
 

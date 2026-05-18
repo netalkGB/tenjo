@@ -615,7 +615,18 @@ describe('MessageService', () => {
       );
 
       expect(result).toBe('Generated Title');
-      expect(mockedCreateChatClient).toHaveBeenCalledWith({ config });
+      expect(mockedCreateChatClient).toHaveBeenCalledWith({
+        config,
+        systemPrompt: {
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: 'Do not use <think> tags. Respond directly. Summarize.'
+            }
+          ]
+        }
+      });
     });
 
     it('should return fallback title when no model config', async () => {
@@ -766,30 +777,31 @@ describe('MessageService', () => {
   describe('processMessageStream', () => {
     // Helper to create a mock ChatClient for streaming tests
     const createMockChatClientForStream = () => {
-      let contextAddedCb:
+      let messageAddedCb:
         | ((msg: MessageRequest, all: MessageRequest[]) => void)
         | undefined;
 
       const client = {
-        onContextAdded: vi.fn(
+        onMessageAdded: vi.fn(
           (cb: (msg: MessageRequest, all: MessageRequest[]) => void) => {
-            contextAddedCb = cb;
+            messageAddedCb = cb;
           }
         ),
         setMessageHandler: vi.fn(),
         setThinkingHandler: vi.fn(),
         setReasoningHandler: vi.fn(),
+        setToolCallStreamHandler: vi.fn(),
         sendMessage: vi.fn(),
         getToolCallPlan: vi.fn().mockReturnValue(null),
         addToolCallResult: vi.fn(),
         validateToolCallResult: vi.fn()
       };
 
-      const triggerContextAdded = (msg: MessageRequest) => {
-        if (contextAddedCb) contextAddedCb(msg, []);
+      const triggerMessageAdded = (msg: MessageRequest) => {
+        if (messageAddedCb) messageAddedCb(msg, []);
       };
 
-      return { client, triggerContextAdded };
+      return { client, triggerMessageAdded };
     };
 
     const createMockWriter = () => {
@@ -853,6 +865,7 @@ describe('MessageService', () => {
           | 'parentMessageId'
           | 'userId'
           | 'modelConfig'
+          | 'localToolHandlers'
         >
       > = {}
     ): ProcessMessageStreamParams => ({
@@ -867,21 +880,25 @@ describe('MessageService', () => {
       writer: (overrides.writer ??
         createMockWriter()) as unknown as StreamWriter,
       modelConfig: overrides.modelConfig ?? makeModelConfig(),
-      ...('imageUrls' in overrides ? { imageUrls: overrides.imageUrls } : {})
+      abortSignal: new AbortController().signal,
+      ...('imageUrls' in overrides ? { imageUrls: overrides.imageUrls } : {}),
+      ...('localToolHandlers' in overrides
+        ? { localToolHandlers: overrides.localToolHandlers }
+        : {})
     });
 
-    it('should send message and save user+assistant messages via onContextAdded', async () => {
+    it('should send message and save user+assistant messages via onMessageAdded', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
 
       // When sendMessage is called, simulate context added callbacks
       client.sendMessage.mockImplementation(async () => {
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Hello' }]
         });
-        triggerContextAdded({ role: 'assistant', content: 'Hi there' });
+        triggerMessageAdded({ role: 'assistant', content: 'Hi there' });
       });
 
       const result = await service.processMessageStream(
@@ -898,7 +915,7 @@ describe('MessageService', () => {
 
     it('should resolve local image URLs to data URIs and restore originals when saving', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       const mockReadFile = vi.mocked(fs.readFile);
       mockReadFile.mockResolvedValue(Buffer.from('fake-image-data'));
@@ -912,14 +929,14 @@ describe('MessageService', () => {
           expect(imageUrls![0]).toMatch(/^data:image\/png;base64,/);
 
           // Simulate saving user message with the data URI content
-          triggerContextAdded({
+          triggerMessageAdded({
             role: 'user',
             content: [
               { type: 'text', text: 'Describe this' },
               { type: 'image_url', image_url: { url: imageUrls![0] } }
             ]
           });
-          triggerContextAdded({ role: 'assistant', content: 'A nice image' });
+          triggerMessageAdded({ role: 'assistant', content: 'A nice image' });
         }
       );
 
@@ -950,7 +967,7 @@ describe('MessageService', () => {
 
     it('should pass external image URLs through without resolution', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
 
       const externalUrl = 'https://example.com/image.png';
@@ -960,8 +977,8 @@ describe('MessageService', () => {
           // External URL should be passed through as-is
           expect(imageUrls).toBeDefined();
           expect(imageUrls![0]).toBe(externalUrl);
-          triggerContextAdded({ role: 'user', content: 'Hello' });
-          triggerContextAdded({ role: 'assistant', content: 'Hi' });
+          triggerMessageAdded({ role: 'user', content: 'Hello' });
+          triggerMessageAdded({ role: 'assistant', content: 'Hi' });
         }
       );
 
@@ -979,7 +996,7 @@ describe('MessageService', () => {
 
     it('should fall back to original URL when file read fails during image resolution', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       fileUploadServiceMock.read.mockRejectedValue(
         new Error('ENOENT: no such file')
@@ -992,8 +1009,8 @@ describe('MessageService', () => {
           // Should fall back to original URL when file read fails
           expect(imageUrls).toBeDefined();
           expect(imageUrls![0]).toBe(imageUrl);
-          triggerContextAdded({ role: 'user', content: 'Hello' });
-          triggerContextAdded({ role: 'assistant', content: 'Hi' });
+          triggerMessageAdded({ role: 'user', content: 'Hello' });
+          triggerMessageAdded({ role: 'assistant', content: 'Hi' });
         }
       );
 
@@ -1012,7 +1029,7 @@ describe('MessageService', () => {
 
     it('should handle auto-approved tool calls', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       const mcpManager = createMockMcpClientManager();
 
@@ -1034,7 +1051,7 @@ describe('MessageService', () => {
       client.validateToolCallResult.mockResolvedValue(undefined);
 
       client.sendMessage.mockImplementation(async () => {
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Use the tool' }]
         });
@@ -1070,7 +1087,7 @@ describe('MessageService', () => {
 
     it('should wait for manual approval and execute when approved', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       const mcpManager = createMockMcpClientManager();
 
@@ -1092,7 +1109,7 @@ describe('MessageService', () => {
       client.validateToolCallResult.mockResolvedValue(undefined);
 
       client.sendMessage.mockImplementation(async () => {
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Do risky thing' }]
         });
@@ -1131,7 +1148,7 @@ describe('MessageService', () => {
 
     it('should cancel remaining tools when manual approval is rejected', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       const mcpManager = createMockMcpClientManager();
 
@@ -1155,7 +1172,7 @@ describe('MessageService', () => {
       vi.mocked(toolApprovalEmitter.waitForApproval).mockResolvedValue(false);
 
       client.sendMessage.mockImplementation(async () => {
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Do stuff' }]
         });
@@ -1196,12 +1213,12 @@ describe('MessageService', () => {
 
     it('should handle AbortError by waiting for pending saves and returning partial result', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
 
       client.sendMessage.mockImplementation(async () => {
         // Simulate saving user message before abort
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Hello' }]
         });
@@ -1223,7 +1240,7 @@ describe('MessageService', () => {
 
     it('should handle tool execution errors gracefully', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       const mcpManager = createMockMcpClientManager();
 
@@ -1244,7 +1261,7 @@ describe('MessageService', () => {
       client.validateToolCallResult.mockResolvedValue(undefined);
 
       client.sendMessage.mockImplementation(async () => {
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Use broken tool' }]
         });
@@ -1283,7 +1300,7 @@ describe('MessageService', () => {
 
     it('should write chunk data via setMessageHandler callback', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
 
       // Capture and invoke the message handler during sendMessage
@@ -1293,11 +1310,11 @@ describe('MessageService', () => {
         ) => void;
         messageHandler('Hello ');
         messageHandler('world');
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Hi' }]
         });
-        triggerContextAdded({ role: 'assistant', content: 'Hello world' });
+        triggerMessageAdded({ role: 'assistant', content: 'Hello world' });
       });
 
       await service.processMessageStream(
@@ -1322,7 +1339,7 @@ describe('MessageService', () => {
 
     it('should write thinking data via setThinkingHandler callback', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
 
       client.sendMessage.mockImplementation(async () => {
@@ -1330,11 +1347,11 @@ describe('MessageService', () => {
           chunk: string
         ) => void;
         thinkingHandler('Let me think...');
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Question' }]
         });
-        triggerContextAdded({ role: 'assistant', content: 'Answer' });
+        triggerMessageAdded({ role: 'assistant', content: 'Answer' });
       });
 
       await service.processMessageStream(
@@ -1358,7 +1375,7 @@ describe('MessageService', () => {
 
     it('should write reasoning data via setReasoningHandler callback', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
 
       client.sendMessage.mockImplementation(async () => {
@@ -1366,11 +1383,11 @@ describe('MessageService', () => {
           .calls[0][0] as (chunk: string) => void;
         reasoningHandler('Step 1: analyze');
         reasoningHandler('Step 2: conclude');
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Reason about this' }]
         });
-        triggerContextAdded({ role: 'assistant', content: 'Result' });
+        triggerMessageAdded({ role: 'assistant', content: 'Result' });
       });
 
       await service.processMessageStream(
@@ -1397,7 +1414,7 @@ describe('MessageService', () => {
 
     it('should cancel pending tool approvals when writer closes mid-approval', async () => {
       setupAddMessage();
-      const { client, triggerContextAdded } = createMockChatClientForStream();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
       const mcpManager = createMockMcpClientManager();
 
@@ -1422,7 +1439,7 @@ describe('MessageService', () => {
       );
 
       client.sendMessage.mockImplementation(async () => {
-        triggerContextAdded({
+        triggerMessageAdded({
           role: 'user',
           content: [{ type: 'text', text: 'Use slow tool' }]
         });
@@ -1456,6 +1473,367 @@ describe('MessageService', () => {
           makeStreamParams({ client, writer, parentMessageId: null })
         )
       ).rejects.toThrow('Internal server error');
+    });
+
+    // --- localToolHandlers ---
+
+    it('should dispatch local tools to the in-process handler instead of MCP', async () => {
+      setupAddMessage();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
+      const writer = createMockWriter();
+      const mcpManager = createMockMcpClientManager();
+
+      const localHandler = vi.fn().mockResolvedValue({ stdout: '42\n' });
+      const localToolHandlers = new Map<
+        string,
+        (args: Record<string, unknown>) => Promise<unknown>
+      >([['tenjo_execute_code', localHandler]]);
+
+      const toolCallPlan: ToolCallResponse[] = [
+        {
+          type: 'function',
+          id: 'tc-local-1',
+          function: {
+            name: 'tenjo_execute_code',
+            arguments: '{"code":"console.log(42)"}'
+          }
+        }
+      ];
+
+      client.getToolCallPlan
+        .mockReturnValueOnce(toolCallPlan)
+        .mockReturnValueOnce(null);
+      client.validateToolCallResult.mockResolvedValue(undefined);
+
+      client.sendMessage.mockImplementation(async () => {
+        triggerMessageAdded({
+          role: 'user',
+          content: [{ type: 'text', text: 'compute' }]
+        });
+      });
+
+      await service.processMessageStream(
+        makeStreamParams({
+          client,
+          writer,
+          mcpManager,
+          localToolHandlers,
+          parentMessageId: null
+        })
+      );
+
+      expect(localHandler).toHaveBeenCalledWith({ code: 'console.log(42)' });
+      expect(mcpManager.callTool).not.toHaveBeenCalled();
+      expect(client.addToolCallResult).toHaveBeenCalledWith('tc-local-1', {
+        stdout: '42\n'
+      });
+    });
+
+    it('should bypass approval workflow for local tools', async () => {
+      setupAddMessage();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
+      const writer = createMockWriter();
+      const mcpManager = createMockMcpClientManager();
+
+      const localHandler = vi.fn().mockResolvedValue({ stdout: 'ok' });
+      const localToolHandlers = new Map<
+        string,
+        (args: Record<string, unknown>) => Promise<unknown>
+      >([['tenjo_execute_code', localHandler]]);
+
+      client.getToolCallPlan
+        .mockReturnValueOnce([
+          {
+            type: 'function',
+            id: 'tc-local-2',
+            function: { name: 'tenjo_execute_code', arguments: '{}' }
+          }
+        ])
+        .mockReturnValueOnce(null);
+      client.validateToolCallResult.mockResolvedValue(undefined);
+
+      client.sendMessage.mockImplementation(async () => {
+        triggerMessageAdded({
+          role: 'user',
+          content: [{ type: 'text', text: 'run' }]
+        });
+      });
+
+      await service.processMessageStream(
+        makeStreamParams({
+          client,
+          writer,
+          mcpManager,
+          localToolHandlers,
+          parentMessageId: null
+        })
+      );
+
+      // Approval rule lookup must be skipped entirely for local tools so the
+      // user-facing "auto-approve" rules can't accidentally gate them.
+      expect(toolApprovalRuleRepo.shouldAutoApprove).not.toHaveBeenCalled();
+      expect(toolApprovalEmitter.waitForApproval).not.toHaveBeenCalled();
+      // The frontend should see a regular `calling` event (no approval_request).
+      const writtenData = (writer.write.mock.calls as [string][]).map(
+        (c) => JSON.parse(c[0].replace('data: ', '')) as unknown
+      );
+      const approvalRequests = writtenData.filter(
+        (d: unknown) =>
+          typeof d === 'object' &&
+          d !== null &&
+          'toolCall' in d &&
+          (d as { toolCall: { type: string } }).toolCall.type ===
+            'approval_request'
+      );
+      expect(approvalRequests).toHaveLength(0);
+    });
+
+    it('should still route non-local tool calls to MCP even when localToolHandlers is set', async () => {
+      setupAddMessage();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
+      const writer = createMockWriter();
+      const mcpManager = createMockMcpClientManager();
+
+      const localHandler = vi.fn();
+      const localToolHandlers = new Map<
+        string,
+        (args: Record<string, unknown>) => Promise<unknown>
+      >([['tenjo_execute_code', localHandler]]);
+
+      client.getToolCallPlan
+        .mockReturnValueOnce([
+          {
+            type: 'function',
+            id: 'tc-mcp-1',
+            function: { name: 'mcp_search', arguments: '{"q":"hi"}' }
+          }
+        ])
+        .mockReturnValueOnce(null);
+      toolApprovalRuleRepo.shouldAutoApprove.mockResolvedValue(true);
+      mcpManager.callTool.mockResolvedValue({ result: 'mcp output' });
+      client.validateToolCallResult.mockResolvedValue(undefined);
+
+      client.sendMessage.mockImplementation(async () => {
+        triggerMessageAdded({
+          role: 'user',
+          content: [{ type: 'text', text: 'search' }]
+        });
+      });
+
+      await service.processMessageStream(
+        makeStreamParams({
+          client,
+          writer,
+          mcpManager,
+          localToolHandlers,
+          parentMessageId: null
+        })
+      );
+
+      expect(localHandler).not.toHaveBeenCalled();
+      expect(mcpManager.callTool).toHaveBeenCalledWith('mcp_search', {
+        q: 'hi'
+      });
+    });
+
+    it('should surface local tool errors as a tool result event', async () => {
+      setupAddMessage();
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
+      const writer = createMockWriter();
+      const mcpManager = createMockMcpClientManager();
+
+      const localHandler = vi
+        .fn()
+        .mockRejectedValue(new Error('execution failed'));
+      const localToolHandlers = new Map<
+        string,
+        (args: Record<string, unknown>) => Promise<unknown>
+      >([['tenjo_execute_code', localHandler]]);
+
+      client.getToolCallPlan
+        .mockReturnValueOnce([
+          {
+            type: 'function',
+            id: 'tc-local-err',
+            function: { name: 'tenjo_execute_code', arguments: '{}' }
+          }
+        ])
+        .mockReturnValueOnce(null);
+      client.validateToolCallResult.mockResolvedValue(undefined);
+
+      client.sendMessage.mockImplementation(async () => {
+        triggerMessageAdded({
+          role: 'user',
+          content: [{ type: 'text', text: 'broken' }]
+        });
+      });
+
+      await service.processMessageStream(
+        makeStreamParams({
+          client,
+          writer,
+          mcpManager,
+          localToolHandlers,
+          parentMessageId: null
+        })
+      );
+
+      expect(client.addToolCallResult).toHaveBeenCalledWith('tc-local-err', {
+        error: 'execution failed'
+      });
+    });
+
+    // --- saveQueue serialization ---
+
+    it('should serialize concurrent onMessageAdded saves so parent_message_id chains correctly', async () => {
+      threadRepo.update.mockResolvedValue(undefined);
+
+      // Track the order in which addMessage *resolves*. The user-message save
+      // is intentionally slower than the assistant-message save would be,
+      // so without serialization the assistant save would resolve first
+      // and observe a stale `lastSavedMessageId`.
+      const observedParentIds: (string | null)[] = [];
+      let counter = 0;
+      let userSaveResolve: ((id: string) => void) | undefined;
+      messageRepo.addMessage.mockImplementation(
+        async (input: { parent_message_id: string | null }) => {
+          counter++;
+          observedParentIds.push(input.parent_message_id);
+          const id = `saved-msg-${counter}`;
+
+          if (counter === 1) {
+            // Block until the test releases this save.
+            return await new Promise<{
+              id: string;
+              thread_id: string;
+              parent_message_id: string | null;
+              selected_child_id: null;
+              data: MessageRequest;
+              source: string;
+              model: null;
+              provider: null;
+              created_by: string;
+              updated_by: string;
+              created_at: Date;
+              updated_at: Date;
+            }>((resolve) => {
+              userSaveResolve = (savedId: string) =>
+                resolve({
+                  id: savedId,
+                  thread_id: 'thread-1',
+                  parent_message_id: null,
+                  selected_child_id: null,
+                  data: { role: 'user', content: '' },
+                  source: 'user',
+                  model: null,
+                  provider: null,
+                  created_by: 'user-1',
+                  updated_by: 'user-1',
+                  created_at: new Date(),
+                  updated_at: new Date()
+                });
+            });
+          }
+
+          return {
+            id,
+            thread_id: 'thread-1',
+            parent_message_id: input.parent_message_id,
+            selected_child_id: null,
+            data: { role: 'assistant', content: '' },
+            source: 'assistant',
+            model: null,
+            provider: null,
+            created_by: 'user-1',
+            updated_by: 'user-1',
+            created_at: new Date(),
+            updated_at: new Date()
+          } satisfies Message;
+        }
+      );
+
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
+      const writer = createMockWriter();
+
+      client.sendMessage.mockImplementation(async () => {
+        // Fire two onMessageAdded events back-to-back. Without saveQueue
+        // serialization, the second handler would see lastSavedMessageId =
+        // null and write parent_message_id = null instead of the user's id.
+        triggerMessageAdded({
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }]
+        });
+        triggerMessageAdded({ role: 'assistant', content: 'Hi' });
+
+        // Let microtasks flush so the first addMessage actually runs and
+        // captures userSaveResolve. Then release the queue.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        userSaveResolve?.('saved-msg-1');
+      });
+
+      const result = await service.processMessageStream(
+        makeStreamParams({ client, writer, parentMessageId: 'parent-1' })
+      );
+
+      // Both saves ran; user first, then assistant chained behind it.
+      expect(messageRepo.addMessage).toHaveBeenCalledTimes(2);
+      // First save uses the seed parent_message_id from the request.
+      expect(observedParentIds[0]).toBe('parent-1');
+      // Critical: the assistant save must observe the user's saved id —
+      // proving the queue waited for the slow user save to resolve before
+      // running the assistant save (otherwise it would still be 'parent-1').
+      expect(observedParentIds[1]).toBe('saved-msg-1');
+      expect(result.userMessageId).toBe('saved-msg-1');
+      expect(result.assistantMessageId).toBe('saved-msg-2');
+    });
+
+    it('should keep the saveQueue alive after a single failed save', async () => {
+      threadRepo.update.mockResolvedValue(undefined);
+
+      let counter = 0;
+      messageRepo.addMessage.mockImplementation(async () => {
+        counter++;
+        if (counter === 1) {
+          throw new Error('transient db error');
+        }
+        return {
+          id: `saved-msg-${counter}`,
+          thread_id: 'thread-1',
+          parent_message_id: null,
+          selected_child_id: null,
+          data: { role: 'assistant', content: '' },
+          source: 'assistant',
+          model: null,
+          provider: null,
+          created_by: 'user-1',
+          updated_by: 'user-1',
+          created_at: new Date(),
+          updated_at: new Date()
+        } satisfies Message;
+      });
+
+      const { client, triggerMessageAdded } = createMockChatClientForStream();
+      const writer = createMockWriter();
+
+      client.sendMessage.mockImplementation(async () => {
+        triggerMessageAdded({
+          role: 'user',
+          content: [{ type: 'text', text: 'first' }]
+        });
+        triggerMessageAdded({ role: 'assistant', content: 'second' });
+      });
+
+      // The first save rejects; processMessageStream awaits all queued saves
+      // and surfaces the failure. We just want to confirm the second save
+      // wasn't skipped — it should have been attempted before the rejection
+      // bubbled up through Promise.all.
+      await expect(
+        service.processMessageStream(
+          makeStreamParams({ client, writer, parentMessageId: null })
+        )
+      ).rejects.toThrow('transient db error');
+
+      expect(messageRepo.addMessage).toHaveBeenCalledTimes(2);
     });
   });
 });

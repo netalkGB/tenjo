@@ -12,7 +12,7 @@ export class ImageNotFoundError extends ServiceError {
 
 export class ImageValidationError extends ServiceError {}
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 interface MagicByteEntry {
   format: string;
@@ -27,7 +27,8 @@ const MAGIC_BYTES: MagicByteEntry[] = [
 
 const EXTENSION_TO_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
-  '.png': 'image/png'
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml'
 };
 
 /**
@@ -45,27 +46,46 @@ function detectImageFormat(buffer: Buffer): string | null {
   return null;
 }
 
+// SVG is text-based and has no fixed magic bytes. Sniff the first chunk for
+// an `<svg` tag opener (allowing for an XML prologue, comments, BOM, etc.).
+function detectSvgFormat(buffer: Buffer): string | null {
+  const head = buffer.subarray(0, 1024).toString('utf8').toLowerCase();
+  return /<svg[\s>]/.test(head) ? '.svg' : null;
+}
+
 export interface UploadResult {
   filename: string;
   url: string;
 }
 
+export interface UploadImageOptions {
+  allowSvg?: boolean;
+}
+
 export class ImageService {
   constructor(private readonly fileUploadService: FileUploadService) {}
 
-  async uploadImage(fileBuffer: Buffer): Promise<UploadResult> {
+  async uploadImage(
+    fileBuffer: Buffer,
+    options: UploadImageOptions = {}
+  ): Promise<UploadResult> {
     if (!fileBuffer || fileBuffer.length === 0) {
       throw new ImageValidationError('No file data received');
     }
 
     if (fileBuffer.length > MAX_FILE_SIZE) {
-      throw new ImageValidationError('File size exceeds 10MB limit');
+      throw new ImageValidationError('File size exceeds 50MB limit');
     }
 
-    const ext = detectImageFormat(fileBuffer);
+    let ext = detectImageFormat(fileBuffer);
+    if (!ext && options.allowSvg) {
+      ext = detectSvgFormat(fileBuffer);
+    }
     if (!ext) {
       throw new ImageValidationError(
-        'Invalid file type. Only JPEG and PNG images are allowed.'
+        options.allowSvg
+          ? 'Invalid file type. Only JPEG, PNG, and SVG images are allowed.'
+          : 'Invalid file type. Only JPEG and PNG images are allowed.'
       );
     }
 

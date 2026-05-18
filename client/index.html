@@ -2,9 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tenjo</title>
+    <title></title>
+    <script>
+      (function () {
+        var t = "<%= typeof appTitle !== 'undefined' ? appTitle : '' %>";
+        var f = "<%= typeof faviconHref !== 'undefined' ? faviconHref : '' %>";
+        var marker = '<' + '%';
+        if (t && t.indexOf(marker) === -1) document.title = t;
+        if (f && f.indexOf(marker) === -1) {
+          var icon = document.querySelector('link[rel="icon"]');
+          if (icon) icon.setAttribute('href', f);
+        }
+      })();
+    </script>
   </head>
   <body data-csrf-token="<%= csrfToken %>">
     <div id="root"></div>

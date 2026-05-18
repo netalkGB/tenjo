@@ -11,6 +11,7 @@ import type {
   ModelSettings
 } from '../../repositories/GlobalSettingRepository';
 import type { CredentialStoreService } from '../CredentialStoreService';
+import type { FileUploadService } from '../FileUploadService';
 import type { McpServersConfig } from 'tenjo-chat-engine';
 
 vi.mock('node:crypto', () => ({
@@ -29,6 +30,14 @@ const createMockCredentialStoreService = () => ({
   exists: vi.fn(),
   delete: vi.fn(),
   update: vi.fn()
+});
+
+const createMockFileUploadService = () => ({
+  save: vi.fn(),
+  read: vi.fn(),
+  readText: vi.fn(),
+  delete: vi.fn(),
+  getPath: vi.fn()
 });
 
 const makeModelEntry = (overrides: Partial<ModelEntry> = {}): ModelEntry => ({
@@ -59,14 +68,17 @@ describe('GlobalSettingService', () => {
   let service: GlobalSettingService;
   let repo: ReturnType<typeof createMockGlobalSettingRepo>;
   let credentialStore: ReturnType<typeof createMockCredentialStoreService>;
+  let fileUpload: ReturnType<typeof createMockFileUploadService>;
 
   beforeEach(() => {
     vi.resetAllMocks();
     repo = createMockGlobalSettingRepo();
     credentialStore = createMockCredentialStoreService();
+    fileUpload = createMockFileUploadService();
     service = new GlobalSettingService(
       repo as unknown as GlobalSettingRepository,
-      credentialStore as unknown as CredentialStoreService
+      credentialStore as unknown as CredentialStoreService,
+      fileUpload as unknown as FileUploadService
     );
   });
 

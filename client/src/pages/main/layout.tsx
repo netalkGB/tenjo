@@ -14,7 +14,7 @@ export function MainLayout({ header, content, footer }: MainLayoutProps) {
         <SidebarTrigger className="-ml-1" data-testid="sidebar-trigger" />
         {header}
       </header>
-      <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+      <div className="flex flex-col h-[calc(100dvh-3.5rem)]">
         <div className="flex-1 overflow-y-auto">{content}</div>
         {footer}
       </div>

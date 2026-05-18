@@ -13,8 +13,8 @@ import { HttpError } from '../../errors/HttpError';
 
 export const uploadRouter = express.Router();
 
-// Max file size: 10MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Max file size: 50MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 /*
  * POST /api/upload/image

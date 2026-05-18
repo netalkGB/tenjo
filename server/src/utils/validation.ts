@@ -23,9 +23,9 @@ export function validateFullName(fullName: string): string | null {
   return null;
 }
 
-export function validateEmail(email: string): string | null {
+export function validateEmail(email: string | null | undefined): string | null {
   if (!email) {
-    return 'profile_email_required';
+    return null;
   }
   if (email.length > EMAIL_MAX_LENGTH) {
     return 'profile_email_too_long';

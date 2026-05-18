@@ -6,8 +6,28 @@ export const NewChatRequestSchema = z.object({
   modelId: z.string().optional(),
   enabledTools: z.array(z.string()).optional(),
   imageUrls: z.array(z.string()).optional(),
-  knowledgeIds: z.array(z.string()).optional()
+  knowledgeIds: z.array(z.string()).optional(),
+  executeCodeEnabled: z.boolean().optional(),
+  webSearchEnabled: z.boolean().optional()
 });
+
+/**
+ * Sub-agent activity event streamed alongside the main chat. Generic so a
+ * future sub-agent (e.g. coding) can emit the same shape — only `agentType`
+ * and `toolName` would change.
+ */
+export const SubAgentActivityEventSchema = z.object({
+  agentId: z.string(),
+  agentType: z.string(),
+  activityId: z.string(),
+  toolName: z.string(),
+  detail: z.string().optional(),
+  url: z.string().optional(),
+  status: z.enum(['started', 'completed', 'failed']),
+  timestamp: z.number()
+});
+
+export type SubAgentActivityEvent = z.infer<typeof SubAgentActivityEventSchema>;
 
 export const ToolCallEventSchema = z.object({
   type: z.enum(['calling', 'result', 'approval_request']),
@@ -19,6 +39,14 @@ export const ToolCallEventSchema = z.object({
 });
 
 export type ToolCallEvent = z.infer<typeof ToolCallEventSchema>;
+
+export const ToolCallStreamEventSchema = z.object({
+  toolCallId: z.string(),
+  toolName: z.string(),
+  argumentsDelta: z.string()
+});
+
+export type ToolCallStreamEvent = z.infer<typeof ToolCallStreamEventSchema>;
 
 export const SSEChunkSchema = z.object({
   chunk: z.string().optional(),
@@ -35,6 +63,8 @@ export const SSEChunkSchema = z.object({
   model: z.string().optional(),
   provider: z.string().optional(),
   toolCall: ToolCallEventSchema.optional(),
+  toolCallStream: ToolCallStreamEventSchema.optional(),
+  subAgentActivity: SubAgentActivityEventSchema.optional(),
   error: z.string().optional()
 });
 
@@ -164,14 +194,16 @@ export interface SendMessageCallbacks {
   onGeneratingTitle?: () => void;
   onProcessing?: () => void;
   onAnalyzingImages?: () => void;
+  onTitle?: (title: string) => void;
   onComplete?: (
-    title?: string,
     userMessageId?: string,
     assistantMessageId?: string,
     model?: string,
     provider?: string
   ) => void;
   onToolCall?: (toolCall: ToolCallEvent) => void;
+  onToolCallStream?: (event: ToolCallStreamEvent) => void;
+  onSubAgentActivity?: (event: SubAgentActivityEvent) => void;
   onError?: (error: string) => void;
   signal?: AbortSignal;
 }

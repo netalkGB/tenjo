@@ -5,7 +5,7 @@ export interface User {
   id: string;
   full_name: string | null;
   user_name: string;
-  email: string;
+  email: string | null;
   password: string;
   user_role: 'admin' | 'standard';
   settings: UserSettings;
@@ -19,7 +19,7 @@ export interface InsertUser {
   id?: string;
   full_name?: string | null;
   user_name: string;
-  email: string;
+  email?: string | null;
   password: string;
   user_role?: 'admin' | 'standard';
   settings?: UserSettings;

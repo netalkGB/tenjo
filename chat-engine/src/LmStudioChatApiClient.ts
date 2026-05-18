@@ -81,7 +81,10 @@ export class LmStudioChatApiClient extends LocalChatApiClient {
 
   private async fetchModels(): Promise<LmStudioV0ModelEntry[] | null> {
     const url = `${this.apiBaseUrl}/api/v0/models`;
-    const response = await fetch(url, { method: 'GET', headers: this.buildHeaders() });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.buildHeaders(),
+    });
     if (!response.ok) return null;
 
     const json = (await response.json()) as LmStudioV0ModelsResponse;

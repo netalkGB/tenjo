@@ -15,7 +15,6 @@ vi.mock('../../utils/passwordHasher', () => ({
 vi.mock('../../utils/validation', () => ({
   validateUserName: vi.fn(),
   validateFullName: vi.fn(),
-  validateEmail: vi.fn(),
   validatePassword: vi.fn()
 }));
 
@@ -27,7 +26,6 @@ import { hashPassword, verifyPassword } from '../../utils/passwordHasher';
 import {
   validateUserName,
   validateFullName,
-  validateEmail,
   validatePassword
 } from '../../utils/validation';
 import { isDevelopment } from '../../utils/env';
@@ -72,7 +70,6 @@ describe('UserService', () => {
     // Default: validation passes
     (validateUserName as Mock).mockReturnValue(null);
     (validateFullName as Mock).mockReturnValue(null);
-    (validateEmail as Mock).mockReturnValue(null);
     (validatePassword as Mock).mockReturnValue([]);
   });
 
@@ -104,14 +101,12 @@ describe('UserService', () => {
           id: 'u1',
           fullName: 'Alice',
           userName: 'alice',
-          email: 'alice@test.com',
           userRole: 'admin'
         },
         {
           id: 'u2',
           fullName: '',
           userName: 'bob',
-          email: 'bob@test.com',
           userRole: 'standard'
         }
       ]);
@@ -177,8 +172,7 @@ describe('UserService', () => {
 
       expect(result).toEqual({
         fullName: 'Test User',
-        userName: 'testuser',
-        email: 'test@example.com'
+        userName: 'testuser'
       });
     });
 
@@ -214,23 +208,6 @@ describe('UserService', () => {
       expect(result).toEqual({ userName: 'newname' });
       expect(repo.update).toHaveBeenCalledWith('user-1', {
         user_name: 'newname',
-        updated_by: 'user-1'
-      });
-    });
-
-    it('should update email', async () => {
-      const user = makeUser();
-      repo.findById.mockResolvedValue(user);
-      repo.findByEmail.mockResolvedValue(undefined);
-      repo.update.mockResolvedValue(makeUser({ email: 'new@example.com' }));
-
-      const result = await service.updateProfile('user-1', {
-        email: 'new@example.com'
-      });
-
-      expect(result).toEqual({ userName: undefined });
-      expect(repo.update).toHaveBeenCalledWith('user-1', {
-        email: 'new@example.com',
         updated_by: 'user-1'
       });
     });
@@ -281,15 +258,6 @@ describe('UserService', () => {
       ).rejects.toThrow(UserValidationError);
     });
 
-    it('should throw UserValidationError for invalid email', async () => {
-      repo.findById.mockResolvedValue(makeUser());
-      (validateEmail as Mock).mockReturnValue('profile_email_required');
-
-      await expect(
-        service.updateProfile('user-1', { email: '' })
-      ).rejects.toThrow(UserValidationError);
-    });
-
     it('should throw UserValidationError for invalid fullName', async () => {
       repo.findById.mockResolvedValue(makeUser());
       (validateFullName as Mock).mockReturnValue('profile_full_name_too_long');
@@ -305,15 +273,6 @@ describe('UserService', () => {
 
       await expect(
         service.updateProfile('user-1', { userName: 'taken' })
-      ).rejects.toThrow(UserDuplicateError);
-    });
-
-    it('should throw UserDuplicateError for duplicate email', async () => {
-      repo.findById.mockResolvedValue(makeUser());
-      repo.findByEmail.mockResolvedValue(makeUser({ id: 'other-user' }));
-
-      await expect(
-        service.updateProfile('user-1', { email: 'taken@example.com' })
       ).rejects.toThrow(UserDuplicateError);
     });
 
@@ -449,8 +408,35 @@ describe('UserService', () => {
       expect(result).toEqual({
         language: undefined,
         theme: undefined,
-        selectedKnowledgeIds: undefined
+        selectedKnowledgeIds: undefined,
+        disabledMcpTools: undefined,
+        executeCodeEnabled: undefined
       });
+    });
+
+    it('should return executeCodeEnabled from user settings when set', async () => {
+      repo.findById.mockResolvedValue(
+        makeUser({
+          settings: {
+            language: 'en',
+            executeCodeEnabled: true
+          }
+        })
+      );
+
+      const result = await service.getUserPreferences('user-1');
+
+      expect(result.executeCodeEnabled).toBe(true);
+    });
+
+    it('should return executeCodeEnabled false when explicitly disabled', async () => {
+      repo.findById.mockResolvedValue(
+        makeUser({ settings: { executeCodeEnabled: false } })
+      );
+
+      const result = await service.getUserPreferences('user-1');
+
+      expect(result.executeCodeEnabled).toBe(false);
     });
 
     it('should throw UserNotFoundError when user does not exist', async () => {
@@ -577,6 +563,69 @@ describe('UserService', () => {
       await expect(
         service.updateUserPreferences('unknown', { language: 'en' })
       ).rejects.toThrow(UserNotFoundError);
+    });
+
+    it('should merge executeCodeEnabled=true into existing settings', async () => {
+      repo.findById.mockResolvedValue(
+        makeUser({ settings: { language: 'en', theme: 'dark' } })
+      );
+
+      await service.updateUserPreferences('user-1', {
+        executeCodeEnabled: true
+      });
+
+      expect(repo.update).toHaveBeenCalledWith('user-1', {
+        settings: {
+          language: 'en',
+          theme: 'dark',
+          executeCodeEnabled: true
+        }
+      });
+    });
+
+    it('should allow turning executeCodeEnabled off without affecting other fields', async () => {
+      repo.findById.mockResolvedValue(
+        makeUser({
+          settings: {
+            language: 'ja',
+            theme: 'light',
+            executeCodeEnabled: true
+          }
+        })
+      );
+
+      await service.updateUserPreferences('user-1', {
+        executeCodeEnabled: false
+      });
+
+      expect(repo.update).toHaveBeenCalledWith('user-1', {
+        settings: {
+          language: 'ja',
+          theme: 'light',
+          executeCodeEnabled: false
+        }
+      });
+    });
+
+    it('should not overwrite executeCodeEnabled when preference is undefined', async () => {
+      repo.findById.mockResolvedValue(
+        makeUser({
+          settings: {
+            language: 'en',
+            executeCodeEnabled: true
+          }
+        })
+      );
+
+      await service.updateUserPreferences('user-1', { theme: 'dark' });
+
+      expect(repo.update).toHaveBeenCalledWith('user-1', {
+        settings: {
+          language: 'en',
+          executeCodeEnabled: true,
+          theme: 'dark'
+        }
+      });
     });
   });
 

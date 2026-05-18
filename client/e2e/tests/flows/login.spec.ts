@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test';
 import {
   ADMIN_FULL_NAME,
   ADMIN_USER_NAME,
-  ADMIN_EMAIL,
   ADMIN_PASSWORD
 } from '../setup/constants';
 import { login } from '../../helpers/auth';
@@ -27,8 +26,5 @@ test.describe
       await expect(
         page.getByTestId('settings-profile-user-name-input')
       ).toHaveValue(ADMIN_USER_NAME);
-      await expect(
-        page.getByTestId('settings-profile-email-input')
-      ).toHaveValue(ADMIN_EMAIL);
     });
   });

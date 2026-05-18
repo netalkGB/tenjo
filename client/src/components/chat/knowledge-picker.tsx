@@ -37,12 +37,15 @@ export function KnowledgePicker({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="h-9 gap-1.5 cursor-pointer"
+          className="w-9 h-9 @sm:w-auto @sm:h-9 @sm:gap-1.5 cursor-pointer"
+          aria-label={t('knowledge')}
           data-testid="chat-input-knowledge-button"
         >
           <BookOpen className="w-3.5 h-3.5" />
           {selectedIds.size > 0 && (
-            <span className="text-xs">{selectedIds.size}</span>
+            <span className="text-xs hidden @sm:inline">
+              {selectedIds.size}
+            </span>
           )}
         </Button>
       </PopoverTrigger>

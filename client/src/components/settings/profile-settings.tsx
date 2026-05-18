@@ -11,7 +11,6 @@ import {
   validateUserName,
   FULL_NAME_MAX_LENGTH,
   USER_NAME_MAX_LENGTH,
-  EMAIL_MAX_LENGTH,
   PASSWORD_MAX_LENGTH
 } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
@@ -30,7 +29,7 @@ type FormMessage = {
 function ProfileSkeleton() {
   return (
     <div className="space-y-4">
-      {[1, 2, 3].map(i => (
+      {[1, 2].map(i => (
         <div key={i} className="space-y-2">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-9 w-full rounded-md" />
@@ -67,7 +66,6 @@ export function ProfileSettings() {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [profileFullName, setProfileFullName] = useState('');
   const [profileUserName, setProfileUserName] = useState('');
-  const [profileEmail, setProfileEmail] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<FormMessage | null>(
     null
@@ -91,7 +89,6 @@ export function ProfileSettings() {
         const response = await getProfile();
         setProfileFullName(response.fullName);
         setProfileUserName(response.userName);
-        setProfileEmail(response.email);
       } catch {
         openDialog({
           title: t('error'),
@@ -118,8 +115,7 @@ export function ProfileSettings() {
     try {
       const result = await updateProfile({
         fullName: profileFullName,
-        userName: profileUserName,
-        email: profileEmail
+        userName: profileUserName
       });
 
       if (result.success) {
@@ -140,7 +136,6 @@ export function ProfileSettings() {
               detail as
                 | 'register_user_name_invalid'
                 | 'register_user_name_already_exists'
-                | 'register_email_already_exists'
                 | 'settings_profile_save_failed'
             )
           : t('settings_profile_save_failed')
@@ -267,21 +262,6 @@ export function ProfileSettings() {
                   required
                   pattern="[a-zA-Z0-9]+"
                   data-testid="settings-profile-user-name-input"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="profile-email">
-                  {t('settings_profile_email')}
-                </Label>
-                <Input
-                  id="profile-email"
-                  type="email"
-                  value={profileEmail}
-                  onChange={e => setProfileEmail(e.target.value)}
-                  maxLength={EMAIL_MAX_LENGTH}
-                  required
-                  data-testid="settings-profile-email-input"
                 />
               </div>
 

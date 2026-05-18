@@ -44,7 +44,6 @@ interface RegisterRequest {
   body: {
     fullName?: string;
     userName: string;
-    email: string;
     password: string;
     invitationCode?: string;
   };
@@ -59,12 +58,11 @@ registerRouter.post(
   requireCsrfToken,
   typedHandler<RegisterRequest, RegisterResponse>(async (req, res) => {
     try {
-      const { fullName, userName, email, password, invitationCode } = req.body;
+      const { fullName, userName, password, invitationCode } = req.body;
 
       await registrationService.register({
         fullName,
         userName,
-        email,
         password,
         invitationCode
       });

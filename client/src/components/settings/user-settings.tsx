@@ -36,6 +36,8 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import { useDialog } from '@/hooks/useDialog';
+import { copyTextToClipboard } from '@/lib/clipboard';
+import { useUser } from '@/hooks/useUser';
 
 function UserListSkeleton() {
   return (
@@ -46,7 +48,6 @@ function UserListSkeleton() {
           <div className="flex gap-8 flex-1">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-40" />
           </div>
           <Skeleton className="h-8 w-8 rounded" />
         </div>
@@ -77,6 +78,7 @@ function InvitationCodeListSkeleton() {
 export function UserSettings() {
   const { t } = useTranslation();
   const { openDialog, closeDialog } = useDialog();
+  const { userName: currentUserName } = useUser();
 
   const [userList, setUserList] = useState<UserItem[]>([]);
   const [usersLoaded, setUsersLoaded] = useState(false);
@@ -195,7 +197,7 @@ export function UserSettings() {
   };
 
   const handleCopyCode = async (code: string, id: string) => {
-    await navigator.clipboard.writeText(code);
+    await copyTextToClipboard(code);
     setCopiedCodeId(id);
     setTimeout(() => setCopiedCodeId(null), 2000);
   };
@@ -205,8 +207,7 @@ export function UserSettings() {
     const q = userSearchQuery.toLowerCase();
     return (
       user.fullName.toLowerCase().includes(q) ||
-      user.userName.toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q)
+      user.userName.toLowerCase().includes(q)
     );
   });
 
@@ -242,51 +243,59 @@ export function UserSettings() {
                     <TableRow>
                       <TableHead>{t('settings_users_name')}</TableHead>
                       <TableHead>{t('settings_users_username')}</TableHead>
-                      <TableHead>{t('settings_users_email')}</TableHead>
                       <TableHead className="w-12.5" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredUsers.map(user => (
-                      <TableRow
-                        key={user.id}
-                        data-testid={`settings-users-row-${user.id}`}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {user.fullName || (
-                              <span className="text-muted-foreground">
-                                {t('settings_users_name_unset')}
-                              </span>
-                            )}
-                            {user.userRole === 'admin' && (
-                              <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
-                                {t('settings_role_admin')}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>{user.userName}</TableCell>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() =>
-                                  handleDeleteUser(user.id, user.userName)
-                                }
-                                data-testid={`settings-users-delete-button-${user.id}`}
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>{t('delete')}</TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredUsers.map(user => {
+                      const isSelf = user.userName === currentUserName;
+                      return (
+                        <TableRow
+                          key={user.id}
+                          data-testid={`settings-users-row-${user.id}`}
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {user.fullName || (
+                                <span className="text-muted-foreground">
+                                  {t('settings_users_name_unset')}
+                                </span>
+                              )}
+                              {user.userRole === 'admin' && (
+                                <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
+                                  {t('settings_role_admin')}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{user.userName}</TableCell>
+                          <TableCell>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span tabIndex={isSelf ? 0 : -1}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={isSelf}
+                                    onClick={() =>
+                                      handleDeleteUser(user.id, user.userName)
+                                    }
+                                    data-testid={`settings-users-delete-button-${user.id}`}
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {isSelf
+                                  ? t('settings_users_cannot_delete_self')
+                                  : t('delete')}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}

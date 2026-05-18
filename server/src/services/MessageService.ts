@@ -3,7 +3,8 @@ import type {
   ChatClient,
   McpClientManager,
   MessageRequest,
-  MessageContent
+  MessageContent,
+  LocalToolHandler
 } from 'tenjo-chat-engine';
 import type {
   MessageRepository,
@@ -75,6 +76,8 @@ export interface BranchStatusInfo {
   siblings: string[];
 }
 
+export type { LocalToolHandler };
+
 export interface ProcessMessageStreamParams {
   threadId: string;
   message: string;
@@ -85,6 +88,19 @@ export interface ProcessMessageStreamParams {
   chatClient: ChatClient;
   writer: StreamWriter;
   modelConfig: ModelConfig;
+  // Tool handlers that run locally inside this server process instead of
+  // being dispatched to an MCP server. Looked up by tool name; takes
+  // precedence over MCP tools with the same name.
+  localToolHandlers?: Map<string, LocalToolHandler>;
+  // Fires once when the LLM emits its first chunk/thinking/reasoning. Useful
+  // to defer secondary requests (e.g. title generation) until the model is
+  // loaded — local servers like LM Studio otherwise spin up duplicate
+  // instances when two requests for the same model arrive concurrently.
+  onFirstActivity?: () => void;
+  // External signal used to cancel the in-flight LLM call. Driven by the
+  // explicit /stop endpoint via GenerationAbortRegistry — *not* by SSE
+  // socket close, so client navigation/reload no longer kills the answer.
+  abortSignal: AbortSignal;
 }
 
 export interface ProcessMessageStreamResult {
@@ -264,15 +280,17 @@ export class MessageService {
     }
 
     try {
-      const chatClient = createChatClient({ config: modelConfig });
-      chatClient.setSystemPrompt({
-        role: 'system',
-        content: [
-          {
-            type: 'text',
-            text: 'Do not use <think> tags. Respond directly. Summarize.'
-          }
-        ]
+      const chatClient = createChatClient({
+        config: modelConfig,
+        systemPrompt: {
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: 'Do not use <think> tags. Respond directly. Summarize.'
+            }
+          ]
+        }
       });
 
       // Abort after enough characters or timeout to avoid long waits
@@ -339,21 +357,36 @@ export class MessageService {
       mcpClientManager,
       chatClient,
       writer,
-      modelConfig
+      modelConfig,
+      localToolHandlers,
+      onFirstActivity,
+      abortSignal
     } = params;
+
+    let firstActivityFired = false;
+    const fireFirstActivity = () => {
+      if (firstActivityFired) return;
+      firstActivityFired = true;
+      onFirstActivity?.();
+    };
 
     let userMessageId: string | undefined;
     let assistantMessageId: string | undefined;
     let lastSavedMessageId: string | undefined = parentMessageId ?? undefined;
-    const contextAddedPromises: Promise<void>[] = [];
+    const messageAddedPromises: Promise<void>[] = [];
     const pendingToolCallIds = new Set<string>();
+    // Serializes DB writes triggered by onMessageAdded. Without this, fast
+    // local tools (e.g. tenjo_execute_code) can fire onMessageAdded for the
+    // tool result before the preceding assistant-with-tool_calls insert has
+    // resolved, leaving the tool message's parent_message_id pointing at the
+    // wrong row and the message excluded from findPath on reload.
+    let saveQueue: Promise<void> = Promise.resolve();
 
-    // AbortController to cancel LLM requests on SSE disconnect
-    const abortController = new AbortController();
-
-    // Clean up pending approval listeners and abort LLM on SSE disconnect
+    // Cancel pending tool approvals on SSE disconnect so we don't sit
+    // waiting forever for a user that's no longer there. The LLM call
+    // itself keeps running — generation is driven by abortSignal, which
+    // is only flipped when /stop is called explicitly.
     writer.onClose(() => {
-      abortController.abort();
       for (const id of pendingToolCallIds) {
         toolApprovalEmitter.cancelApproval(id);
       }
@@ -363,9 +396,9 @@ export class MessageService {
     // Mapping from data URIs (sent to LLM) to original URLs (for DB storage)
     const dataUriToOriginalUrl = new Map<string, string>();
 
-    // Save to DB when context is added
-    chatClient.onContextAdded(async (msg: MessageRequest) => {
-      logger.debug(`onContextAdded called, role: ${msg.role}`);
+    // Save to DB when a message is added
+    chatClient.onMessageAdded(async (msg: MessageRequest) => {
+      logger.debug(`onMessageAdded called, role: ${msg.role}`);
 
       // Restore data URIs back to original relative URLs before DB save
       let messageToSave = msg;
@@ -386,7 +419,7 @@ export class MessageService {
         messageToSave = { ...msg, content: restoredContent };
       }
 
-      const promise = (async () => {
+      const promise = saveQueue.then(async () => {
         const savedMessage = await this.messageRepo.addMessage({
           thread_id: threadId,
           parent_message_id: lastSavedMessageId ?? null,
@@ -415,26 +448,39 @@ export class MessageService {
         await this.threadRepo.update(threadId, {
           current_leaf_message_id: savedMessage.id
         });
-      })();
-      contextAddedPromises.push(promise);
+      });
+      // Chain the next save behind this one. Swallow rejection on the queue
+      // copy so a single failure can't permanently break the chain — the
+      // original promise (with the rejection intact) is still tracked via
+      // messageAddedPromises so errors bubble up through normal flow.
+      saveQueue = promise.catch(() => {});
+      messageAddedPromises.push(promise);
     });
 
     // Return messages via streaming
     chatClient.setMessageHandler((chunk: string) => {
+      fireFirstActivity();
       writer.write(`data: ${JSON.stringify({ chunk })}\n\n`);
     });
 
     chatClient.setThinkingHandler((chunk: string) => {
+      fireFirstActivity();
       writer.write(`data: ${JSON.stringify({ thinking: chunk })}\n\n`);
     });
 
     chatClient.setReasoningHandler((chunk: string) => {
+      fireFirstActivity();
       writer.write(`data: ${JSON.stringify({ reasoning: chunk })}\n\n`);
+    });
+
+    chatClient.setToolCallStreamHandler((event) => {
+      fireFirstActivity();
+      writer.write(`data: ${JSON.stringify({ toolCallStream: event })}\n\n`);
     });
 
     // Send message and handle tool calls (may be aborted via signal)
     try {
-      const sendOptions = { signal: abortController.signal };
+      const sendOptions = { signal: abortSignal };
       if (imageUrls && imageUrls.length > 0) {
         const resolvedImageUrls =
           await this.resolveImageUrlsToDataUri(imageUrls);
@@ -465,11 +511,17 @@ export class MessageService {
               unknown
             >;
 
+            // Local in-process tools (e.g. execute_code) bypass the approval
+            // workflow entirely — they are gated by the toggle on the chat
+            // input itself rather than per-call approval.
+            const isLocalTool =
+              localToolHandlers?.has(toolCall.function.name) ?? false;
             const autoApprove =
-              await this.toolApprovalRuleRepo.shouldAutoApprove(
+              isLocalTool ||
+              (await this.toolApprovalRuleRepo.shouldAutoApprove(
                 userId,
                 toolCall.function.name
-              );
+              ));
 
             let approved: boolean;
 
@@ -559,10 +611,13 @@ export class MessageService {
               })}\n\n`
             );
 
-            const toolResult = await mcpClientManager.callTool(
-              toolCall.function.name,
-              toolArgs
-            );
+            const localHandler = localToolHandlers?.get(toolCall.function.name);
+            const toolResult = localHandler
+              ? await localHandler(toolArgs)
+              : await mcpClientManager.callTool(
+                  toolCall.function.name,
+                  toolArgs
+                );
             chatClient.addToolCallResult(toolCall.id, toolResult);
 
             writer.write(
@@ -601,23 +656,23 @@ export class MessageService {
         if (!toolCalls) break;
 
         writer.write(`data: ${JSON.stringify({ processing: true })}\n\n`);
-        await chatClient.validateToolCallResult(abortController.signal);
+        await chatClient.validateToolCallResult(abortSignal);
         toolCalls = chatClient.getToolCallPlan();
       }
     } catch (error) {
       // On abort, wait for pending DB saves and return partial result
       if (error instanceof Error && error.name === 'AbortError') {
         logger.debug('Chat stream aborted, waiting for pending DB saves');
-        if (contextAddedPromises.length > 0) {
-          await Promise.all(contextAddedPromises);
+        if (messageAddedPromises.length > 0) {
+          await Promise.all(messageAddedPromises);
         }
         return { userMessageId, assistantMessageId };
       }
       throw error;
     }
 
-    // Wait until all onContextAdded handlers have completed
-    await Promise.all(contextAddedPromises);
+    // Wait until all onMessageAdded handlers have completed
+    await Promise.all(messageAddedPromises);
 
     return { userMessageId, assistantMessageId };
   }

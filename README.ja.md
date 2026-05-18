@@ -1,8 +1,16 @@
 # Tenjo
 
-複数のAIプロバイダー（LM Studio、Ollama）とMCP（Model Context Protocol）に対応したセルフホスト型AIチャットインターフェースです。
+複数のAIプロバイダー（LM Studio、Ollama）、MCP（Model Context Protocol）、Web検索機能、コード実行機能、HTMLプレビュー機能に対応したセルフホスト型AIチャットインターフェースです。
 
-![スクリーンショット](https://github.com/user-attachments/assets/d9bcce30-b0e3-4098-83bd-054e2fd98550)
+<table align="center">
+  <tr>
+    <td colspan="2" align="center"><img width="600" alt="スクリーンショット" src="https://github.com/user-attachments/assets/7fbdc9fa-9785-4be3-97b8-4ab28b1053f7" /></td>
+  </tr>
+  <tr>
+    <td><img width="450" alt="スクリーンショット" src="https://github.com/user-attachments/assets/12852608-122a-4f4d-9bba-6c717ee2b800" /></td>
+    <td><img width="450" alt="スクリーンショット" src="https://github.com/user-attachments/assets/3c81b0d9-28df-4f31-836e-ad4d396b380a" /></td>
+  </tr>
+</table>
 
 ## 必要なソフトウェア
 
@@ -13,8 +21,18 @@
 
 ### 1. 依存パッケージのインストール
 
+**ブラウザエージェント（Web検索機能）を使用する場合:**
+
 ```bash
 npm run setup
+```
+
+すべての依存パッケージをインストールし、ブラウザエージェントに必要なChromiumもインストールします。
+
+**ブラウザエージェントを使用しない場合:**
+
+```bash
+npm ci
 ```
 
 ### 2. 環境変数の設定
@@ -68,9 +86,6 @@ npm run dev
 
 **MCPのツールが動かない**
 接続先のモデルがfunction callingに対応している必要があります。対応していないモデルではツール呼び出しは機能しません。対応していても、モデルの性能によってはうまく呼び出せないことがあります。
-
-**ユーザー登録時のメールアドレスは何に使われる？**
-ログイン時にユーザー名の代わりとして使用できるだけです。
 
 ## ライセンス
 

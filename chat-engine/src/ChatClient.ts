@@ -2,7 +2,10 @@ import {
   type ChatApiClient,
   type ChatApiResponse,
   type ChatApiStatus,
+  type ChatApiToolCallStreamEvent,
 } from './ChatApiClient';
+
+export type ToolCallStreamEvent = ChatApiToolCallStreamEvent;
 
 import { OpenAIChatApiClient } from './OpenAIChatApiClient';
 
@@ -72,20 +75,29 @@ export class ChatClient {
   private reasoningHandler: (message: string) => void = () => {};
   private statusHandler: (status: ChatStatus) => void = () => {};
   private currentStatus: ChatStatus = 'unknown';
-  private contextAddedHandler: (
+  private messageAddedHandler: (
     message: MessageRequest,
     allMessages: MessageRequest[]
   ) => void = () => {};
   private toolApprovalRequestHandler: (
     pendingTools: PendingToolCall[]
   ) => void = () => {};
+  private toolCallStreamHandler: (event: ToolCallStreamEvent) => void =
+    () => {};
   public _messages: MessageRequest[] = [];
   private _pendingToolCalls: PendingToolCall[] = [];
+  private abortController = new AbortController();
 
   constructor(chatApiClient: ChatApiClient) {
     this.chatApiClient = chatApiClient;
 
     this.setupStreamHandlers();
+
+    this.chatApiClient.setToolCallStreamHandler?.(
+      (event: ChatApiToolCallStreamEvent) => {
+        this.toolCallStreamHandler(event);
+      }
+    );
   }
 
   private setupStreamHandlers(): void {
@@ -226,7 +238,7 @@ export class ChatClient {
     });
     const res = await this.chatApiClient.chatStream(
       this._messages,
-      options.signal
+      options.signal ?? this.abortController.signal
     );
     const assistantMessage = this.toMessageRequest(res);
     this.addMessage(assistantMessage);
@@ -262,10 +274,16 @@ export class ChatClient {
     this.statusHandler = handler;
   }
 
-  public onContextAdded(
+  public setToolCallStreamHandler(
+    handler: (event: ToolCallStreamEvent) => void
+  ) {
+    this.toolCallStreamHandler = handler;
+  }
+
+  public onMessageAdded(
     handler: (message: MessageRequest, allMessages: MessageRequest[]) => void
   ) {
-    this.contextAddedHandler = handler;
+    this.messageAddedHandler = handler;
   }
 
   public onToolApprovalRequest(
@@ -297,9 +315,24 @@ export class ChatClient {
   public async validateToolCallResult(signal?: AbortSignal) {
     const res = await this.chatApiClient.validateToolCallResult(
       this._messages,
-      signal
+      signal ?? this.abortController.signal
     );
     this.addMessage(this.toMessageRequest(res));
+  }
+
+  /**
+   * Cancel the in-flight chat request. The internal AbortController is kept
+   * aborted, so every subsequent sendMessage / validateToolCallResult that
+   * relies on it also short-circuits — call clearAbort() to start fresh.
+   * No-op for calls that pass their own explicit AbortSignal.
+   */
+  public abort(): void {
+    this.abortController.abort();
+  }
+
+  /** Swap in a fresh AbortController so the client is usable again after abort(). */
+  public clearAbort(): void {
+    this.abortController = new AbortController();
   }
 
   public setSystemPrompt(systemPrompt: MessageRequest) {
@@ -328,7 +361,7 @@ export class ChatClient {
 
   private addMessage(message: MessageRequest) {
     this._messages.push(message);
-    this.contextAddedHandler(message, this._messages);
+    this.messageAddedHandler(message, this._messages);
   }
 
   public getMessages() {

@@ -37,38 +37,26 @@ export function createChatApiClient(
   }
 }
 
-function buildSystemPrompt(knowledgeContent?: string): MessageRequest {
-  let text = 'You are a helpful AI assistant.';
-  if (knowledgeContent) {
-    text +=
-      '\n\nI have been informed about and am aware of the following in advance.\n' +
-      knowledgeContent;
-  }
-  return {
-    role: 'system',
-    content: [{ type: 'text', text }]
-  };
-}
-
 interface CreateChatClientOptions {
   config: ModelConfig;
   tools?: ToolDefinitionRequest[];
-  knowledgeContent?: string;
+  systemPrompt: MessageRequest;
   contextMessages?: MessageRequest[];
 }
 
 /**
  * Creates a fully initialized ChatClient with system prompt and context messages.
  * The system prompt is always preserved at index 0, even when context messages are provided.
+ * Build the systemPrompt with `SystemPromptBuilder` so all conditional pieces
+ * (knowledge, optional tool nudges, etc.) live in one place.
  */
 export function createChatClient({
   config,
   tools = [],
-  knowledgeContent,
+  systemPrompt,
   contextMessages
 }: CreateChatClientOptions): ChatClient {
   const chatClient = new ChatClient(createChatApiClient(config, tools));
-  const systemPrompt = buildSystemPrompt(knowledgeContent);
 
   if (contextMessages && contextMessages.length > 0) {
     chatClient.setMessages([systemPrompt, ...contextMessages]);

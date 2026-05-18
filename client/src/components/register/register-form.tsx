@@ -16,14 +16,12 @@ import {
   validateUserName,
   FULL_NAME_MAX_LENGTH,
   USER_NAME_MAX_LENGTH,
-  EMAIL_MAX_LENGTH,
   PASSWORD_MAX_LENGTH
 } from '@/lib/validation';
 
 export interface RegisterFormData {
   fullName: string;
   userName: string;
-  email: string;
   password: string;
   invitationCode?: string;
 }
@@ -70,7 +68,6 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
       const formData = new FormData(e.currentTarget);
       const fullName = (formData.get('fullName') as string).trim();
       const userName = (formData.get('userName') as string).trim();
-      const email = (formData.get('email') as string).trim();
       const password = formData.get('password') as string;
       const passwordConfirm = formData.get('passwordConfirm') as string;
       const invitationCode = needsInvitationCode
@@ -100,7 +97,6 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
       onSubmitButtonClicked?.({
         fullName: fullName || '',
         userName,
-        email,
         password,
         invitationCode: invitationCode || undefined
       });
@@ -162,17 +158,6 @@ export const RegisterForm = forwardRef<RegisterFormRef, RegisterFormProps>(
                     aria-invalid={!!userNameError || undefined}
                   />
                   {userNameError && <FieldError>{userNameError}</FieldError>}
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="email">{t('register_email')}</FieldLabel>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    maxLength={EMAIL_MAX_LENGTH}
-                    required
-                    data-testid="register-email-input"
-                  />
                 </Field>
                 <Field data-invalid={passwordErrors.length > 0 || undefined}>
                   <FieldLabel htmlFor="password">

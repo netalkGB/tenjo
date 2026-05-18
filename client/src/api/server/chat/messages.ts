@@ -24,6 +24,19 @@ export async function getThreadMessages(
 }
 
 /**
+ * Aborts an in-flight generation for the given thread on the server. Closing
+ * the SSE stream alone (e.g. by navigating or reloading) no longer cancels
+ * generation — only this explicit call does.
+ */
+export async function stopGeneration(threadId: string): Promise<void> {
+  try {
+    await axios.post(`/api/chat/threads/${threadId}/stop`);
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
+/**
  * Reads an SSE stream and dispatches parsed chunks to the provided callbacks.
  */
 async function processSSEStream(
@@ -91,7 +104,6 @@ async function processSSEStream(
 
         if (validated.done && callbacks.onComplete) {
           callbacks.onComplete(
-            validated.title,
             validated.userMessageId,
             validated.assistantMessageId,
             validated.model,
@@ -99,8 +111,26 @@ async function processSSEStream(
           );
         }
 
+        // Title arrives as its own event after `done` so the input lock can
+        // be released without waiting for title generation.
+        if (
+          !validated.done &&
+          validated.title !== undefined &&
+          callbacks.onTitle
+        ) {
+          callbacks.onTitle(validated.title);
+        }
+
         if (validated.toolCall && callbacks.onToolCall) {
           callbacks.onToolCall(validated.toolCall);
+        }
+
+        if (validated.toolCallStream && callbacks.onToolCallStream) {
+          callbacks.onToolCallStream(validated.toolCallStream);
+        }
+
+        if (validated.subAgentActivity && callbacks.onSubAgentActivity) {
+          callbacks.onSubAgentActivity(validated.subAgentActivity);
         }
       }
     }
@@ -126,7 +156,9 @@ export async function editAndResendMessage(
   modelId?: string,
   enabledTools?: string[],
   imageUrls?: string[],
-  knowledgeIds?: string[]
+  knowledgeIds?: string[],
+  executeCodeEnabled?: boolean,
+  webSearchEnabled?: boolean
 ): Promise<void> {
   try {
     const requestData = {
@@ -135,7 +167,9 @@ export async function editAndResendMessage(
       enabledTools,
       imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined,
       knowledgeIds:
-        knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined
+        knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined,
+      executeCodeEnabled: executeCodeEnabled || undefined,
+      webSearchEnabled: webSearchEnabled || undefined
     };
 
     const response = await fetch(
@@ -170,7 +204,9 @@ export async function sendMessageToThread(
   modelId?: string,
   enabledTools?: string[],
   imageUrls?: string[],
-  knowledgeIds?: string[]
+  knowledgeIds?: string[],
+  executeCodeEnabled?: boolean,
+  webSearchEnabled?: boolean
 ): Promise<void> {
   try {
     const requestData = NewChatRequestSchema.parse({
@@ -180,7 +216,9 @@ export async function sendMessageToThread(
       enabledTools,
       imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined,
       knowledgeIds:
-        knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined
+        knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined,
+      executeCodeEnabled: executeCodeEnabled || undefined,
+      webSearchEnabled: webSearchEnabled || undefined
     });
 
     const response = await fetch(`/api/chat/threads/${threadId}/messages`, {

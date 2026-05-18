@@ -1,21 +1,21 @@
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useState } from 'react';
 
 interface UserMessageEditProps {
-  defaultValue: string;
+  value: string;
+  onChange: (value: string) => void;
   onCancel: () => void;
   onSave: (editedMessage: string) => void;
 }
 
 export function UserMessageEdit({
-  defaultValue,
+  value,
+  onChange,
   onCancel,
   onSave
 }: UserMessageEditProps) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(defaultValue);
 
   const handleSave = () => {
     onSave(value);
@@ -27,7 +27,7 @@ export function UserMessageEdit({
         <Textarea
           className="bg-background text-foreground"
           value={value}
-          onChange={e => setValue(e.target.value)}
+          onChange={e => onChange(e.target.value)}
           data-testid="user-message-edit-textarea"
         />
         <div className="flex justify-end mt-3">

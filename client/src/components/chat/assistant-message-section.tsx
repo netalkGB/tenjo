@@ -2,10 +2,11 @@ import { ReactNode } from 'react';
 import { AssistantMessage } from './assistant-message';
 import { AssistantMessageActions } from './assistant-message-actions';
 import { ToolCallSection } from './tool-call-section';
-import { ToolCallItem } from './tool-call-section';
 import type { ToolCallInfo } from './tool-call-section';
+import type { SubAgentActivityInfo } from './sub-agent-activity';
 import { ThinkingBlock } from './thinking-block';
 import { Skeleton } from '@/components/ui/skeleton';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import type { MessagePart } from '@/state/chatTypes';
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
@@ -35,7 +36,9 @@ interface AssistantMessageSectionProps {
   skeleton?: boolean;
   isStreaming?: boolean;
   toolCalls?: ToolCallInfo[];
+  subAgentActivities?: SubAgentActivityInfo[];
   contentParts?: MessagePart[];
+  messageId?: string;
   onRetry?: () => void;
   onCopy?: () => void;
   onPrevious?: () => void;
@@ -52,14 +55,16 @@ export function AssistantMessageSection({
   skeleton = false,
   isStreaming = false,
   toolCalls,
+  subAgentActivities,
   contentParts,
+  messageId,
   onRetry,
   onCopy,
   onPrevious,
   onNext
 }: AssistantMessageSectionProps) {
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(String(message));
+    await copyTextToClipboard(String(message));
     if (onCopy) {
       onCopy();
     }
@@ -99,19 +104,30 @@ export function AssistantMessageSection({
         />
       )}
       {hasChronologicalParts ? (
-        // Render parts in chronological order
+        // Render parts in chronological order. Sub-agent activity parts are
+        // skipped here — their live progress is rendered inside the parent
+        // tool-call card (see WebSearchToolCall).
         contentParts.map((part, index) => {
           if (part.type === 'toolCall') {
             const tc = toolCallMap.get(part.toolCallId);
             if (!tc) return null;
             return (
-              <div key={part.toolCallId} className="mb-1.5">
-                <ToolCallItem toolCall={tc} />
-              </div>
+              <ToolCallSection
+                key={part.toolCallId}
+                toolCalls={[tc]}
+                subAgentActivities={subAgentActivities}
+              />
             );
           }
+          if (part.type === 'subAgentActivity') {
+            return null;
+          }
           return (
-            <AssistantMessage key={`text-${index}`}>
+            <AssistantMessage
+              key={`text-${index}`}
+              messageId={messageId}
+              isStreaming={isStreaming}
+            >
               {part.content}
             </AssistantMessage>
           );
@@ -120,9 +136,14 @@ export function AssistantMessageSection({
         // Fallback: original order (toolCalls first, then text)
         <>
           {toolCalls && toolCalls.length > 0 && (
-            <ToolCallSection toolCalls={toolCalls} />
+            <ToolCallSection
+              toolCalls={toolCalls}
+              subAgentActivities={subAgentActivities}
+            />
           )}
-          <AssistantMessage>{message}</AssistantMessage>
+          <AssistantMessage messageId={messageId} isStreaming={isStreaming}>
+            {message}
+          </AssistantMessage>
         </>
       )}
       <AssistantMessageActions

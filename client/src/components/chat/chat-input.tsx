@@ -1,5 +1,15 @@
 import { Button } from '@/components/ui/button';
-import { ArrowUp, Square, Plus, ImagePlus, X, Loader2 } from 'lucide-react';
+import {
+  ArrowUp,
+  Square,
+  Plus,
+  ImagePlus,
+  X,
+  Loader2,
+  Code2,
+  Globe
+} from 'lucide-react';
+import { useDialog } from '@/hooks/useDialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Select,
@@ -15,6 +25,11 @@ import {
   PopoverContent,
   PopoverTrigger
 } from '@/components/ui/popover';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSettings } from '@/contexts/settings-context';
 import type { Model } from '@/api/server/settings';
@@ -27,6 +42,7 @@ import {
   type UploadProgress
 } from '@/api/server/chat/upload';
 import { formatProviderLabel } from '@/lib/providerLabels';
+import { generateRandomId } from '@/lib/generateRandomId';
 
 function formatModelLabel(model: Model, allModels: Model[]): string {
   const base = `${formatProviderLabel(model.type)} / ${model.model}`;
@@ -66,6 +82,7 @@ export function ChatInput({
   onToggleKnowledge
 }: ChatInputProps) {
   const { t } = useTranslation();
+  const { openDialog } = useDialog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState('');
@@ -83,8 +100,31 @@ export function ChatInput({
     toggleTool,
     toggleServerTools,
     enableAllTools,
-    disableAllTools
+    disableAllTools,
+    executeCodeEnabled,
+    toggleExecuteCodeEnabled,
+    webSearchEnabled,
+    toggleWebSearchEnabled
   } = useSettings();
+
+  const handleWebSearchClick = () => {
+    if (webSearchEnabled) {
+      // Turning off — no confirmation needed.
+      toggleWebSearchEnabled();
+      return;
+    }
+    openDialog({
+      title: t('web_search_enable_title'),
+      description: t('web_search_warning'),
+      type: 'cancel/ok',
+      okText: t('web_search_enable_confirm'),
+      cancelText: t('web_search_enable_cancel'),
+      showCloseButton: false,
+      onOk: () => {
+        toggleWebSearchEnabled();
+      }
+    });
+  };
 
   const handleInput = () => {
     const textarea = textareaRef.current;
@@ -100,7 +140,11 @@ export function ChatInput({
   const allUploaded = images.every(img => img.uploadedUrl && !img.error);
   const hasContent = text.trim().length > 0 || images.length > 0;
   const canSend =
-    hasContent && !!activeModelId && allUploaded && !isGeneratingLocked;
+    hasContent &&
+    !!activeModelId &&
+    allUploaded &&
+    !isGeneratingLocked &&
+    !isStreaming;
 
   const handleSendMessage = () => {
     const textarea = textareaRef.current;
@@ -130,7 +174,7 @@ export function ChatInput({
       const fileArray = Array.from(files);
 
       for (const file of fileArray) {
-        const id = crypto.randomUUID();
+        const id = generateRandomId();
         const previewUrl = URL.createObjectURL(file);
 
         // Validate magic number before adding
@@ -287,7 +331,7 @@ export function ChatInput({
 
   return (
     <div
-      className={`border p-2.5 rounded-lg shadow-xl relative transition-colors ${
+      className={`@container border p-2.5 rounded-lg shadow-xl relative transition-colors ${
         isDragOver ? 'border-primary bg-primary/5' : ''
       }`}
       onDragOver={handleDragOver}
@@ -356,13 +400,13 @@ export function ChatInput({
           rows={1}
         ></textarea>
       </div>
-      <div className="flex flex-wrap items-center gap-2 mt-1">
+      <div className="flex flex-wrap items-center gap-2 mt-1 justify-end">
         {/* + button with menu */}
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
-              className="w-9 h-9 cursor-pointer"
+              className="w-9 h-9 cursor-pointer shrink-0 mr-auto"
               data-testid="chat-input-plus-button"
             >
               <Plus className="w-4 h-4" />
@@ -390,8 +434,42 @@ export function ChatInput({
           data-testid="chat-input-file-input"
         />
 
-        <div className="flex-1" />
-
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-9 h-9 @sm:w-auto @sm:h-9 @sm:gap-1.5 cursor-pointer shrink-0 @max-sm:aria-pressed:bg-primary! @max-sm:aria-pressed:text-primary-foreground @max-sm:aria-pressed:border-primary! @max-sm:aria-pressed:hover:bg-primary/90!"
+              onClick={toggleExecuteCodeEnabled}
+              aria-pressed={executeCodeEnabled}
+              aria-label={t('execute_code')}
+              data-testid="chat-input-execute-code-button"
+            >
+              <Code2 className="w-3.5 h-3.5" />
+              <span className="text-xs hidden @sm:inline">
+                {executeCodeEnabled ? t('on') : t('off')}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('execute_code')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-9 h-9 @sm:w-auto @sm:h-9 @sm:gap-1.5 cursor-pointer shrink-0 @max-sm:aria-pressed:bg-primary! @max-sm:aria-pressed:text-primary-foreground @max-sm:aria-pressed:border-primary! @max-sm:aria-pressed:hover:bg-primary/90!"
+              onClick={handleWebSearchClick}
+              aria-pressed={webSearchEnabled}
+              aria-label={t('web_search')}
+              data-testid="chat-input-web-search-button"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span className="text-xs hidden @sm:inline">
+                {webSearchEnabled ? t('on') : t('off')}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('web_search')}</TooltipContent>
+        </Tooltip>
         <KnowledgePicker
           selectedIds={selectedKnowledge}
           onToggle={onToggleKnowledge}
@@ -405,47 +483,49 @@ export function ChatInput({
           onEnableAll={enableAllTools}
           onDisableAll={disableAllTools}
         />
-        <Select
-          value={activeModelId || undefined}
-          onValueChange={setActiveModelId}
-          disabled={models.length === 0}
-        >
-          <SelectTrigger
-            className="min-w-30"
-            data-testid="chat-input-model-select"
+        <div className="flex items-center gap-2 flex-1 min-w-0 @sm:flex-none @max-sm:basis-full">
+          <Select
+            value={activeModelId || undefined}
+            onValueChange={setActiveModelId}
+            disabled={models.length === 0}
           >
-            <SelectValue placeholder={t('settings_select_model')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectLabel>{t('settings_select_model')}</SelectLabel>
-              {models.map(model => (
-                <SelectItem key={model.id} value={model.id}>
-                  {formatModelLabel(model, models)}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        {isStreaming ? (
-          <Button
-            variant="outline"
-            className="w-9 h-9 cursor-pointer"
-            onClick={onStop}
-            data-testid="chat-input-stop-button"
-          >
-            <Square className="w-3 h-3 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            className="w-9 h-9 cursor-pointer"
-            onClick={handleSendMessage}
-            disabled={!canSend}
-            data-testid="chat-input-send-button"
-          >
-            <ArrowUp className="w-3 h-3" />
-          </Button>
-        )}
+            <SelectTrigger
+              className="min-w-0 flex-1 @sm:flex-none @sm:min-w-30 @max-sm:text-xs"
+              data-testid="chat-input-model-select"
+            >
+              <SelectValue placeholder={t('settings_select_model')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>{t('settings_select_model')}</SelectLabel>
+                {models.map(model => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {formatModelLabel(model, models)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {isStreaming ? (
+            <Button
+              variant="outline"
+              className="w-9 h-9 cursor-pointer shrink-0"
+              onClick={onStop}
+              data-testid="chat-input-stop-button"
+            >
+              <Square className="w-3 h-3 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              className="w-9 h-9 cursor-pointer shrink-0"
+              onClick={handleSendMessage}
+              disabled={!canSend}
+              data-testid="chat-input-send-button"
+            >
+              <ArrowUp className="w-3 h-3" />
+            </Button>
+          )}
+        </div>
       </div>
       {isGeneratingLocked && (
         <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">

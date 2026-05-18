@@ -143,6 +143,15 @@ export class FileCleanupService {
       referenced.add(filename);
     }
 
+    // Extract branding filenames (logo, favicon) from global_settings
+    const globalSettings = await this.globalSettingRepo.getSettings();
+    if (globalSettings.branding?.logoFilename) {
+      referenced.add(globalSettings.branding.logoFilename);
+    }
+    if (globalSettings.branding?.faviconFilename) {
+      referenced.add(globalSettings.branding.faviconFilename);
+    }
+
     return referenced;
   }
 

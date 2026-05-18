@@ -3,6 +3,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 
 export type ChatStatus =
   | 'toolExecuting'
+  | 'executingCode'
   | 'processing'
   | 'generatingTitle'
   | 'analyzingImages'
@@ -19,6 +20,7 @@ export function ChatStatusLine({ status }: ChatStatusLineProps) {
 
   const statusMessages: Record<NonNullable<ChatStatus>, string> = {
     toolExecuting: t('status_tool_executing'),
+    executingCode: t('status_executing_code'),
     processing: t('status_processing'),
     generatingTitle: t('status_generating_title'),
     analyzingImages: t('status_analyzing_images')

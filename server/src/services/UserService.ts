@@ -18,8 +18,7 @@ export class UserDuplicateError extends ServiceError {}
 import {
   validatePassword,
   validateUserName,
-  validateFullName,
-  validateEmail
+  validateFullName
 } from '../utils/validation';
 import { isDevelopment } from '../utils/env';
 import { hashPassword, verifyPassword } from '../utils/passwordHasher';
@@ -27,20 +26,17 @@ import { hashPassword, verifyPassword } from '../utils/passwordHasher';
 export interface ProfileInfo {
   fullName: string;
   userName: string;
-  email: string;
 }
 
 interface UpdateProfileParams {
   fullName?: string;
   userName?: string;
-  email?: string;
 }
 
 export interface UserListItem {
   id: string;
   fullName: string;
   userName: string;
-  email: string;
   userRole: UserRole;
 }
 
@@ -53,7 +49,6 @@ export class UserService {
       id: u.id,
       fullName: u.full_name ?? '',
       userName: u.user_name,
-      email: u.email,
       userRole: u.user_role as UserRole
     }));
   }
@@ -78,8 +73,7 @@ export class UserService {
 
     return {
       fullName: user.full_name ?? '',
-      userName: user.user_name,
-      email: user.email
+      userName: user.user_name
     };
   }
 
@@ -112,18 +106,6 @@ export class UserService {
         throw new UserDuplicateError('register_user_name_already_exists');
       }
       updates.user_name = params.userName;
-    }
-
-    if (params.email !== undefined && params.email !== user.email) {
-      const emailError = validateEmail(params.email);
-      if (emailError) {
-        throw new UserValidationError(emailError);
-      }
-      const existing = await this.userRepo.findByEmail(params.email);
-      if (existing) {
-        throw new UserDuplicateError('register_email_already_exists');
-      }
-      updates.email = params.email;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -182,6 +164,8 @@ export class UserService {
     theme?: string;
     selectedKnowledgeIds?: string[];
     disabledMcpTools?: string[];
+    executeCodeEnabled?: boolean;
+    webSearchEnabled?: boolean;
   }> {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new UserNotFoundError();
@@ -189,7 +173,9 @@ export class UserService {
       language: user.settings?.language,
       theme: user.settings?.theme,
       selectedKnowledgeIds: user.settings?.selectedKnowledgeIds,
-      disabledMcpTools: user.settings?.disabledMcpTools
+      disabledMcpTools: user.settings?.disabledMcpTools,
+      executeCodeEnabled: user.settings?.executeCodeEnabled,
+      webSearchEnabled: user.settings?.webSearchEnabled
     };
   }
 
@@ -200,6 +186,8 @@ export class UserService {
       theme?: string;
       selectedKnowledgeIds?: string[];
       disabledMcpTools?: string[];
+      executeCodeEnabled?: boolean;
+      webSearchEnabled?: boolean;
     }
   ): Promise<void> {
     const user = await this.userRepo.findById(userId);
@@ -218,6 +206,12 @@ export class UserService {
     }
     if (preferences.disabledMcpTools !== undefined) {
       merged.disabledMcpTools = preferences.disabledMcpTools;
+    }
+    if (preferences.executeCodeEnabled !== undefined) {
+      merged.executeCodeEnabled = preferences.executeCodeEnabled;
+    }
+    if (preferences.webSearchEnabled !== undefined) {
+      merged.webSearchEnabled = preferences.webSearchEnabled;
     }
 
     await this.userRepo.update(userId, { settings: merged });

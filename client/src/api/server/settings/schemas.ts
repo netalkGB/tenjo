@@ -2,8 +2,7 @@ import { z } from 'zod';
 
 export const ProfileResponseSchema = z.object({
   fullName: z.string(),
-  userName: z.string(),
-  email: z.string()
+  userName: z.string()
 });
 
 export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
@@ -11,7 +10,6 @@ export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;
 export interface UpdateProfileRequest {
   fullName?: string;
   userName?: string;
-  email?: string;
 }
 
 export const UpdateProfileResponseSchema = z.object({
@@ -96,7 +94,6 @@ export const UserSchema = z.object({
   id: z.string(),
   fullName: z.string(),
   userName: z.string(),
-  email: z.string(),
   userRole: UserRoleSchema
 });
 
@@ -209,7 +206,9 @@ export const UserPreferencesResponseSchema = z.object({
   language: z.string().optional(),
   theme: z.string().optional(),
   selectedKnowledgeIds: z.array(z.string()).optional(),
-  disabledMcpTools: z.array(z.string()).optional()
+  disabledMcpTools: z.array(z.string()).optional(),
+  executeCodeEnabled: z.boolean().optional(),
+  webSearchEnabled: z.boolean().optional()
 });
 
 export type UserPreferencesResponse = z.infer<
@@ -221,6 +220,8 @@ export interface UpdatePreferencesRequest {
   theme?: string;
   selectedKnowledgeIds?: string[];
   disabledMcpTools?: string[];
+  executeCodeEnabled?: boolean;
+  webSearchEnabled?: boolean;
 }
 
 // Cleanup
@@ -237,3 +238,17 @@ export const StartCleanupResponseSchema = z.object({
 });
 
 export type StartCleanupResponse = z.infer<typeof StartCleanupResponseSchema>;
+
+// Branding
+
+export const BrandingResponseSchema = z.object({
+  appTitle: z.string().nullable(),
+  logoUrl: z.string().nullable(),
+  faviconUrl: z.string().nullable()
+});
+
+export type BrandingResponse = z.infer<typeof BrandingResponseSchema>;
+
+export interface UpdateBrandingRequest {
+  appTitle?: string | null;
+}

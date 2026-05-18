@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { type ChatApiClient, type ChatApiStatus } from './ChatApiClient';
+import {
+  type ChatApiClient,
+  type ChatApiStatus,
+  type ChatApiToolCallStreamEvent,
+} from './ChatApiClient';
 import { MessageRole } from './ChatClient';
 
 export type Status = ChatApiStatus;
@@ -81,6 +85,8 @@ export class OpenAIChatApiClient implements ChatApiClient {
   private onMessage: (data: string) => void = () => {};
   private onReasoning: (data: string) => void = () => {};
   private onStatusChanged: (status: Status) => void = () => {};
+  private onToolCallStream: (event: ChatApiToolCallStreamEvent) => void =
+    () => {};
   private currentStatus: Status = 'unknown';
   constructor(params: {
     apiBaseUrl: string;
@@ -226,6 +232,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
       tool_calls: undefined,
     };
     const toolCallsTmp = new Map<number, ToolCallResponse>();
+    const pendingToolCallArgs = new Map<number, string>();
 
     const reader = response.body!.getReader();
     const decoder = new TextDecoder('utf-8');
@@ -253,7 +260,12 @@ export class OpenAIChatApiClient implements ChatApiClient {
             }
 
             try {
-              this.processStreamDelta(json, message, toolCallsTmp);
+              this.processStreamDelta(
+                json,
+                message,
+                toolCallsTmp,
+                pendingToolCallArgs
+              );
             } catch {
               // Invalid JSON - ignore
             }
@@ -274,7 +286,8 @@ export class OpenAIChatApiClient implements ChatApiClient {
   private processStreamDelta(
     json: string,
     message: ChatCompletionMessageRepsonse,
-    toolCallsTmp: Map<number, ToolCallResponse>
+    toolCallsTmp: Map<number, ToolCallResponse>,
+    pendingArgs: Map<number, string>
   ): void {
     const delta = JSON.parse(json);
     const choice = delta.choices?.[0]?.delta;
@@ -310,17 +323,52 @@ export class OpenAIChatApiClient implements ChatApiClient {
           id: '',
           function: { name: '', arguments: '' },
         };
+        const hadIdAndName =
+          existingToolCall.id !== '' && existingToolCall.function.name !== '';
 
         existingToolCall.id += toolCall.id ?? '';
         existingToolCall.type = toolCall.type ?? '';
 
+        const newArgsDelta = toolCall.function?.arguments ?? '';
         if (toolCall.function) {
           existingToolCall.function.name += toolCall.function.name ?? '';
-          existingToolCall.function.arguments +=
-            toolCall.function.arguments ?? '';
+          existingToolCall.function.arguments += newArgsDelta;
         }
 
         toolCallsTmp.set(toolCall.index, existingToolCall);
+
+        // Buffer arg deltas until id+name are known, then flush each delta as
+        // a stream event so consumers can render args incrementally.
+        const hasIdAndName =
+          existingToolCall.id !== '' && existingToolCall.function.name !== '';
+        if (!hasIdAndName) {
+          if (newArgsDelta) {
+            pendingArgs.set(
+              toolCall.index,
+              (pendingArgs.get(toolCall.index) ?? '') + newArgsDelta
+            );
+          }
+          continue;
+        }
+
+        const buffered = pendingArgs.get(toolCall.index);
+        if (!hadIdAndName && buffered !== undefined) {
+          pendingArgs.delete(toolCall.index);
+          this.onToolCallStream({
+            toolCallId: existingToolCall.id,
+            toolName: existingToolCall.function.name,
+            argumentsDelta: buffered + newArgsDelta,
+          });
+        } else if (newArgsDelta) {
+          // Skip empty deltas (e.g. the initial id+name-only chunk) so
+          // consumers don't create a placeholder entry before any source is
+          // available — the first delta with actual content creates it.
+          this.onToolCallStream({
+            toolCallId: existingToolCall.id,
+            toolName: existingToolCall.function.name,
+            argumentsDelta: newArgsDelta,
+          });
+        }
       }
     }
   }
@@ -349,6 +397,12 @@ export class OpenAIChatApiClient implements ChatApiClient {
 
   public setStatusHandler(onStatusChanged: (status: Status) => void) {
     this.onStatusChanged = onStatusChanged;
+  }
+
+  public setToolCallStreamHandler(
+    onToolCallStream: (event: ChatApiToolCallStreamEvent) => void
+  ) {
+    this.onToolCallStream = onToolCallStream;
   }
 
   getStatus(): ChatApiStatus {

@@ -49,24 +49,32 @@ async function main() {
     console.log(`[Status] ${status}`);
   });
 
-  // Reference implementation of onContextAdded event
-  // Called each time context is added
-  // In the future, database writes will be performed at this timing
-  client.onContextAdded((message: MessageRequest, allMessages: MessageRequest[]) => {
-    console.log('\n[Context Added Event]');
-    console.log(`Role: ${message.role}`);
-    console.log(`Content length: ${message.content?.length || 0}`);
-    console.log(`Total messages: ${allMessages.length}`);
-    console.log('---');
-
-    // Example implementation for future DB persistence:
-    // await db.saveMessage({
-    //   role: message.role,
-    //   content: message.content,
-    //   tool_calls: message.tool_calls,
-    //   timestamp: new Date(),
-    // });
+  client.setToolCallStreamHandler((event) => {
+    process.stdout.write(
+      `[ToolCallStream ${event.toolName}] ${event.argumentsDelta}`
+    );
   });
+
+  // Reference implementation of onMessageAdded event
+  // Called each time a message is appended to the conversation
+  // In the future, database writes will be performed at this timing
+  client.onMessageAdded(
+    (message: MessageRequest, allMessages: MessageRequest[]) => {
+      console.log('\n[Message Added Event]');
+      console.log(`Role: ${message.role}`);
+      console.log(`Content length: ${message.content?.length || 0}`);
+      console.log(`Total messages: ${allMessages.length}`);
+      console.log('---');
+
+      // Example implementation for future DB persistence:
+      // await db.saveMessage({
+      //   role: message.role,
+      //   content: message.content,
+      //   tool_calls: message.tool_calls,
+      //   timestamp: new Date(),
+      // });
+    }
+  );
 
   client.setSystemPrompt({
     role: 'system',

@@ -26,7 +26,9 @@ const updateKnowledgeSchema = z.object({
 
 /*
  * GET /api/knowledge
- * List knowledge entries for the current user with pagination.
+ * List knowledge entries for the current user.
+ * When pageSize is provided, results are paginated.
+ * When pageSize is omitted, all entries are returned (no LIMIT).
  * Supports ?search=, ?pageSize=, ?pageNumber= query params.
  */
 interface ListKnowledgeRequest {
@@ -44,9 +46,22 @@ knowledgeRouter.get(
     const sessionUser = req.user as SessionUser;
     const { search, pageSize, pageNumber } = req.query;
 
+    if (pageSize === undefined) {
+      const entries = search
+        ? await knowledgeService.search(sessionUser.id, search)
+        : await knowledgeService.list(sessionUser.id);
+      res.json({
+        entries,
+        totalPages: 1,
+        currentPage: 1,
+        totalCount: entries.length
+      });
+      return;
+    }
+
     const result = await knowledgeService.findPaginated(
       sessionUser.id,
-      parseInt(pageSize ?? '', 10) || 15,
+      parseInt(pageSize, 10) || 15,
       parseInt(pageNumber ?? '', 10) || 1,
       search || undefined
     );

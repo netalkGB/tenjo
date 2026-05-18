@@ -1,17 +1,16 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { ADMIN_USER_NAME, ADMIN_PASSWORD } from '../setup/constants';
 import { login } from '../../helpers/auth';
 
-async function changeLanguage(
-  page: import('@playwright/test').Page,
-  mode: 'auto' | 'en' | 'ja'
-) {
+const TITLE_TIMEOUT = 10_000;
+
+async function changeLanguage(page: Page, mode: 'auto' | 'en' | 'ja') {
   const trigger = page.getByTestId('settings-general-language-select');
   await trigger.click();
   const option = page.getByTestId(`settings-general-language-option-${mode}`);
   // Wait for the preferences PATCH to complete so the change is persisted
   const preferencesResponse = page.waitForResponse(
-    (resp) =>
+    resp =>
       resp.url().includes('/api/settings/preferences') &&
       resp.request().method() === 'PATCH'
   );
@@ -21,74 +20,108 @@ async function changeLanguage(
   await expect(trigger).toHaveAttribute('data-state', 'closed');
 }
 
-async function logoutAndWait(page: import('@playwright/test').Page) {
+async function logoutAndWait(page: Page) {
   await page.getByTestId('sidebar-user-profile-button').click();
   await page.getByTestId('sidebar-user-signout-menu-item').click();
   await page.getByTestId('dialog-ok-button').click();
   await page.waitForURL(/\/login/);
 }
 
-test.describe
-  .serial('language settings', () => {
-    test('change language to Japanese, verify persistence across reload and re-login', async ({
-      page
-    }) => {
-      // Login as admin and navigate to general settings
-      await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
-      await page.goto('/settings/general');
+// Navigate (or reload) and wait for the SettingsProvider's preferences GET to
+// complete. This guarantees the loaded prefs are applied before the test
+// proceeds, so a slow response cannot revert subsequent UI interactions.
+async function navigateAndWaitForPrefs(page: Page, action: () => Promise<unknown>) {
+  await Promise.all([
+    page.waitForResponse(
+      resp =>
+        resp.url().includes('/api/settings/preferences') &&
+        resp.request().method() === 'GET',
+      { timeout: TITLE_TIMEOUT }
+    ),
+    action()
+  ]);
+}
 
-      // Change language to Japanese
-      await changeLanguage(page, 'ja');
+async function gotoSettingsGeneral(page: Page) {
+  await navigateAndWaitForPrefs(page, () => page.goto('/settings/general'));
+}
 
-      // Verify settings title is in Japanese
-      await expect(page.getByTestId('settings-title')).toHaveText('設定');
+async function reloadSettingsGeneral(page: Page) {
+  await navigateAndWaitForPrefs(page, () => page.reload());
+}
 
-      // Reload and verify persistence
-      await page.reload();
-      await expect(page.getByTestId('settings-title')).toHaveText('設定');
+test.describe.serial('language settings', () => {
+  test('change language to Japanese, verify persistence across reload and re-login', async ({
+    page
+  }) => {
+    // Login as admin and navigate to general settings
+    await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
+    await gotoSettingsGeneral(page);
 
-      // Re-login and verify language persists
-      await logoutAndWait(page);
-      await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
-      await page.goto('/settings/general');
-      await expect(page.getByTestId('settings-title')).toHaveText('設定');
+    // Change language to Japanese
+    await changeLanguage(page, 'ja');
+
+    // Verify settings title is in Japanese
+    await expect(page.getByTestId('settings-title')).toHaveText('設定', {
+      timeout: TITLE_TIMEOUT
     });
 
-    test('change language to English, verify persistence across reload and re-login', async ({
-      page
-    }) => {
-      // Login and navigate to settings (still in Japanese from previous test)
-      await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
-      await page.goto('/settings/general');
-
-      // Change language to English
-      await changeLanguage(page, 'en');
-
-      // Verify settings title is in English
-      await expect(page.getByTestId('settings-title')).toHaveText('Settings');
-
-      // Reload and verify persistence
-      await page.reload();
-      await expect(page.getByTestId('settings-title')).toHaveText('Settings');
-
-      // Re-login and verify language persists
-      await logoutAndWait(page);
-      await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
-      await page.goto('/settings/general');
-      await expect(page.getByTestId('settings-title')).toHaveText('Settings');
+    // Reload and verify persistence
+    await reloadSettingsGeneral(page);
+    await expect(page.getByTestId('settings-title')).toHaveText('設定', {
+      timeout: TITLE_TIMEOUT
     });
 
-    test('change language back to auto', async ({ page }) => {
-      // Login and navigate to settings (in English from previous test)
-      await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
-      await page.goto('/settings/general');
-
-      // Change language to Auto
-      await changeLanguage(page, 'auto');
-
-      // Verify the select shows auto label (browser locale determines the language)
-      await expect(
-        page.getByTestId('settings-general-language-select')
-      ).toHaveText(/Auto|自動/);
+    // Re-login and verify language persists
+    await logoutAndWait(page);
+    await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
+    await gotoSettingsGeneral(page);
+    await expect(page.getByTestId('settings-title')).toHaveText('設定', {
+      timeout: TITLE_TIMEOUT
     });
   });
+
+  test('change language to English, verify persistence across reload and re-login', async ({
+    page
+  }) => {
+    // Login and navigate to settings (still in Japanese from previous test)
+    await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
+    await gotoSettingsGeneral(page);
+
+    // Change language to English
+    await changeLanguage(page, 'en');
+
+    // Verify settings title is in English
+    await expect(page.getByTestId('settings-title')).toHaveText('Settings', {
+      timeout: TITLE_TIMEOUT
+    });
+
+    // Reload and verify persistence
+    await reloadSettingsGeneral(page);
+    await expect(page.getByTestId('settings-title')).toHaveText('Settings', {
+      timeout: TITLE_TIMEOUT
+    });
+
+    // Re-login and verify language persists
+    await logoutAndWait(page);
+    await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
+    await gotoSettingsGeneral(page);
+    await expect(page.getByTestId('settings-title')).toHaveText('Settings', {
+      timeout: TITLE_TIMEOUT
+    });
+  });
+
+  test('change language back to auto', async ({ page }) => {
+    // Login and navigate to settings (in English from previous test)
+    await login(page, ADMIN_USER_NAME, ADMIN_PASSWORD);
+    await gotoSettingsGeneral(page);
+
+    // Change language to Auto
+    await changeLanguage(page, 'auto');
+
+    // Verify the select shows auto label (browser locale determines the language)
+    await expect(
+      page.getByTestId('settings-general-language-select')
+    ).toHaveText(/Auto|自動/);
+  });
+});

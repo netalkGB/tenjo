@@ -19,7 +19,6 @@ export async function fetchRegisterStatus(): Promise<RegisterStatusResponse> {
 export async function register(data: {
   fullName?: string;
   userName: string;
-  email: string;
   password: string;
   invitationCode?: string;
 }): Promise<RegisterResponse> {

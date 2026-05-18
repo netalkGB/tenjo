@@ -193,19 +193,36 @@ export const chatReducer = (
       const event = action.payload;
 
       if (event.type === 'approval_request') {
-        toolCalls.push({
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          toolArgs: event.toolArgs,
-          status: 'pendingApproval'
-        });
-        parts.push({ type: 'toolCall', toolCallId: event.toolCallId });
+        const idx = toolCalls.findIndex(
+          tc => tc.toolCallId === event.toolCallId
+        );
+        if (idx !== -1) {
+          toolCalls[idx] = {
+            ...toolCalls[idx],
+            toolArgs: event.toolArgs,
+            streamingArgsText: undefined,
+            status: 'pendingApproval'
+          };
+        } else {
+          toolCalls.push({
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            toolArgs: event.toolArgs,
+            status: 'pendingApproval'
+          });
+          parts.push({ type: 'toolCall', toolCallId: event.toolCallId });
+        }
       } else if (event.type === 'calling') {
         const idx = toolCalls.findIndex(
           tc => tc.toolCallId === event.toolCallId
         );
         if (idx !== -1) {
-          toolCalls[idx] = { ...toolCalls[idx], status: 'calling' };
+          toolCalls[idx] = {
+            ...toolCalls[idx],
+            toolArgs: event.toolArgs ?? toolCalls[idx].toolArgs,
+            streamingArgsText: undefined,
+            status: 'calling'
+          };
         } else {
           toolCalls.push({
             toolCallId: event.toolCallId,
@@ -232,6 +249,83 @@ export const chatReducer = (
       }
 
       msg.toolCalls = toolCalls;
+      msg.contentParts = parts;
+      messages[lastIndex] = msg;
+      return { ...state, messages };
+    }
+
+    case ChatActionType.UPDATE_TOOL_CALL_STREAM: {
+      const messages = [...state.messages];
+      const lastIndex = messages.length - 1;
+      if (lastIndex < 0 || messages[lastIndex].type !== 'assistant')
+        return state;
+
+      const msg = { ...messages[lastIndex] };
+      const toolCalls = [...(msg.toolCalls || [])];
+      const parts = [...(msg.contentParts ?? [])];
+      const event = action.payload;
+
+      const idx = toolCalls.findIndex(tc => tc.toolCallId === event.toolCallId);
+      if (idx !== -1) {
+        toolCalls[idx] = {
+          ...toolCalls[idx],
+          streamingArgsText:
+            (toolCalls[idx].streamingArgsText ?? '') + event.argumentsDelta
+        };
+      } else {
+        toolCalls.push({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          streamingArgsText: event.argumentsDelta,
+          status: 'streaming'
+        });
+        parts.push({ type: 'toolCall', toolCallId: event.toolCallId });
+      }
+
+      msg.toolCalls = toolCalls;
+      msg.contentParts = parts;
+      messages[lastIndex] = msg;
+      return { ...state, messages };
+    }
+
+    case ChatActionType.UPDATE_SUB_AGENT_ACTIVITY: {
+      const messages = [...state.messages];
+      const lastIndex = messages.length - 1;
+      if (lastIndex < 0 || messages[lastIndex].type !== 'assistant')
+        return state;
+
+      const msg = { ...messages[lastIndex] };
+      const activities = [...(msg.subAgentActivities ?? [])];
+      const parts = [...(msg.contentParts ?? [])];
+      const event = action.payload;
+
+      const idx = activities.findIndex(a => a.activityId === event.activityId);
+      if (idx !== -1) {
+        // Update an existing activity (started → completed/failed).
+        activities[idx] = {
+          ...activities[idx],
+          status: event.status,
+          // Keep the original detail / url if the end event omitted them.
+          detail: event.detail ?? activities[idx].detail,
+          url: event.url ?? activities[idx].url
+        };
+      } else {
+        activities.push({
+          activityId: event.activityId,
+          agentId: event.agentId,
+          agentType: event.agentType,
+          toolName: event.toolName,
+          detail: event.detail,
+          url: event.url,
+          status: event.status
+        });
+        parts.push({
+          type: 'subAgentActivity',
+          activityId: event.activityId
+        });
+      }
+
+      msg.subAgentActivities = activities;
       msg.contentParts = parts;
       messages[lastIndex] = msg;
       return { ...state, messages };

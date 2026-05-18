@@ -8,6 +8,7 @@ import { I18nProvider } from '@lingui/react';
 import { RouterProvider } from 'react-router';
 import { ErrorFallback } from './components/error';
 import { DialogProvider } from './contexts/dialog-context';
+import { BrandingProvider } from './contexts/branding-context';
 import { CustomDialog } from '@/components/common/custom-dialog';
 import { useDialog } from '@/hooks/useDialog';
 
@@ -53,10 +54,12 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary FallbackComponent={ErrorFallback}>
       <I18nProvider i18n={i18n}>
         <DialogProvider>
-          <Suspense fallback={null}>
-            <RouterProvider router={routes} />
-          </Suspense>
-          <DialogStack />
+          <BrandingProvider>
+            <Suspense fallback={null}>
+              <RouterProvider router={routes} />
+            </Suspense>
+            <DialogStack />
+          </BrandingProvider>
         </DialogProvider>
       </I18nProvider>
     </ErrorBoundary>

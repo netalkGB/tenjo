@@ -5,9 +5,11 @@ import type {
   ModelSettings,
   ModelEntry,
   ModelEntryResponse,
-  ModelConfig
+  ModelConfig,
+  BrandingSettings
 } from '../repositories/GlobalSettingRepository';
 import type { CredentialStoreService } from './CredentialStoreService';
+import type { FileUploadService } from './FileUploadService';
 import type { McpServersConfig } from 'tenjo-chat-engine';
 import { ServiceError } from '../errors/ServiceError';
 
@@ -19,10 +21,21 @@ export class ModelNotFoundError extends ServiceError {
 
 export class ModelDuplicateError extends ServiceError {}
 
+export class BrandingValidationError extends ServiceError {}
+
+const APP_TITLE_MAX_LENGTH = 60;
+
+export interface BrandingPatch {
+  appTitle?: string | null;
+  logoFilename?: string | null;
+  faviconFilename?: string | null;
+}
+
 export class GlobalSettingService {
   constructor(
     private globalSettingRepo: GlobalSettingRepository,
-    private credentialStoreService: CredentialStoreService
+    private credentialStoreService: CredentialStoreService,
+    private fileUploadService: FileUploadService
   ) {}
 
   async getGlobalSettings(): Promise<GlobalSettings> {
@@ -174,5 +187,72 @@ export class GlobalSettingService {
     const settings = await this.globalSettingRepo.getOrCreateSettings();
     const updated: GlobalSettings = { ...settings, mcpServers };
     await this.globalSettingRepo.updateSettings(updated, userId);
+  }
+
+  async getBrandingSettings(): Promise<BrandingSettings> {
+    const settings = await this.getGlobalSettings();
+    return settings.branding ?? {};
+  }
+
+  async updateBranding(
+    patch: BrandingPatch,
+    userId: string
+  ): Promise<BrandingSettings> {
+    const settings = await this.globalSettingRepo.getOrCreateSettings();
+    const current: BrandingSettings = settings.branding ?? {};
+    const next: BrandingSettings = { ...current };
+
+    if (patch.appTitle !== undefined) {
+      if (patch.appTitle === null) {
+        delete next.appTitle;
+      } else {
+        const trimmed = patch.appTitle.trim();
+        if (trimmed.length === 0) {
+          delete next.appTitle;
+        } else if (trimmed.length > APP_TITLE_MAX_LENGTH) {
+          throw new BrandingValidationError(
+            `App title must be ${APP_TITLE_MAX_LENGTH} characters or fewer`
+          );
+        } else {
+          next.appTitle = trimmed;
+        }
+      }
+    }
+
+    const orphanedFiles: string[] = [];
+
+    if (patch.logoFilename !== undefined) {
+      if (current.logoFilename && current.logoFilename !== patch.logoFilename) {
+        orphanedFiles.push(current.logoFilename);
+      }
+      if (patch.logoFilename === null) {
+        delete next.logoFilename;
+      } else {
+        next.logoFilename = patch.logoFilename;
+      }
+    }
+
+    if (patch.faviconFilename !== undefined) {
+      if (
+        current.faviconFilename &&
+        current.faviconFilename !== patch.faviconFilename
+      ) {
+        orphanedFiles.push(current.faviconFilename);
+      }
+      if (patch.faviconFilename === null) {
+        delete next.faviconFilename;
+      } else {
+        next.faviconFilename = patch.faviconFilename;
+      }
+    }
+
+    const updated: GlobalSettings = { ...settings, branding: next };
+    await this.globalSettingRepo.updateSettings(updated, userId);
+
+    for (const filename of orphanedFiles) {
+      await this.fileUploadService.delete(filename);
+    }
+
+    return next;
   }
 }

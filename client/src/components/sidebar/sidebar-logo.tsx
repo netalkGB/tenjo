@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import ServiceLogo from '@/assets/service-logo.svg?react';
+import { BrandLogo } from '@/components/common/brand-logo';
 import { SidebarMenu, SidebarMenuItem } from '@/components/ui/sidebar';
 
 export function SidebarLogo() {
@@ -11,7 +11,7 @@ export function SidebarLogo() {
           className="flex items-center gap-2 rounded-md p-1 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           data-testid="sidebar-logo-link"
         >
-          <ServiceLogo className="h-7 w-auto" />
+          <BrandLogo className="h-7 w-auto" />
         </Link>
       </SidebarMenuItem>
     </SidebarMenu>

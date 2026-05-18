@@ -18,9 +18,11 @@ import { FileCleanupService } from './FileCleanupService';
 export const credentialStoreService = new CredentialStoreService(
   credentialStoreRepo
 );
+export const fileUploadService = new FileUploadService();
 export const globalSettingService = new GlobalSettingService(
   globalSettingRepo,
-  credentialStoreService
+  credentialStoreService,
+  fileUploadService
 );
 export const pendingOAuthFlowService = new PendingOAuthFlowService(
   pendingOAuthFlowRepo,
@@ -32,7 +34,6 @@ export const mcpOAuthService = new McpOAuthService(
   pendingOAuthFlowService
 );
 export const mcpToolService = new McpToolService(credentialStoreService);
-export const fileUploadService = new FileUploadService();
 export const imageService = new ImageService(fileUploadService);
 export const knowledgeService = new KnowledgeService(
   knowledgeRepo,

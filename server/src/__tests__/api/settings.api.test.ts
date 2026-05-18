@@ -536,8 +536,7 @@ describe('GET /api/settings/profile', () => {
 
     expect(res.body).toEqual({
       fullName: 'Test User',
-      userName: 'standard',
-      email: 'standard@test.com'
+      userName: 'standard'
     });
   });
 
@@ -545,7 +544,6 @@ describe('GET /api/settings/profile', () => {
     const res = await adminAgent.get('/api/settings/profile').expect(200);
 
     expect(res.body.userName).toBe('admin');
-    expect(res.body.email).toBe('admin@test.com');
   });
 
   it('returns 401 for unauthenticated request', async () => {
@@ -584,29 +582,10 @@ describe('PATCH /api/settings/profile', () => {
     expect(profileRes.body.userName).toBe('newname');
   });
 
-  it('updates email', async () => {
-    await standardAgent
-      .patch('/api/settings/profile')
-      .send({ email: 'new@test.com' })
-      .expect(200);
-
-    const profileRes = await standardAgent
-      .get('/api/settings/profile')
-      .expect(200);
-    expect(profileRes.body.email).toBe('new@test.com');
-  });
-
   it('returns 409 for duplicate user name', async () => {
     await standardAgent
       .patch('/api/settings/profile')
       .send({ userName: 'admin' })
-      .expect(409);
-  });
-
-  it('returns 409 for duplicate email', async () => {
-    await standardAgent
-      .patch('/api/settings/profile')
-      .send({ email: 'admin@test.com' })
       .expect(409);
   });
 
