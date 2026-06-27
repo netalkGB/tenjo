@@ -1,6 +1,6 @@
 {
   "name": "tenjo",
-  "version": "0.0.6",
+  "version": "0.1.0",
   "workspaces": [
     "client",
     "server",
@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev": "node scripts/dev.js",
+    "lint": "npm -w client run lint && npm -w server run lint && npm -w chat-engine run lint",
+    "format": "npm -w client run format && npm -w server run format && npm -w chat-engine run format",
     "build": "node scripts/build.js",
     "start": "npm start --prefix server",
     "migrate": "npm run migrate --prefix server",

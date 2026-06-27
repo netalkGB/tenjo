@@ -8,7 +8,8 @@ export const NewChatRequestSchema = z.object({
   imageUrls: z.array(z.string()).optional(),
   knowledgeIds: z.array(z.string()).optional(),
   executeCodeEnabled: z.boolean().optional(),
-  webSearchEnabled: z.boolean().optional()
+  webSearchEnabled: z.boolean().optional(),
+  webSearchExtendedTimeoutEnabled: z.boolean().optional()
 });
 
 /**

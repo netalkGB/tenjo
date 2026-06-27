@@ -15,6 +15,11 @@ import type {
   ModelEntry,
   ModelEntryResponse
 } from '../../repositories/GlobalSettingRepository';
+import { isModelType } from '../../repositories/GlobalSettingRepository';
+import {
+  APPROVE_STATES,
+  type ApproveState
+} from '../../repositories/ToolApprovalRuleRepository';
 import type { McpServersConfig } from 'tenjo-chat-engine';
 import {
   UserService,
@@ -43,7 +48,10 @@ import {
   fileCleanupService,
   imageService
 } from '../../services/registry';
-import { ImageValidationError } from '../../services/ImageService';
+import {
+  ImageNotFoundError,
+  ImageValidationError
+} from '../../services/ImageService';
 import {
   ModelNotFoundError,
   ModelDuplicateError,
@@ -61,6 +69,9 @@ import { getOAuthRedirectUrl } from '../../utils/env';
 import logger from '../../logger';
 
 export const settingsRouter = express.Router();
+
+const isApproveState = (value: string): value is ApproveState =>
+  APPROVE_STATES.includes(value as ApproveState);
 
 const userService = new UserService(userRepo);
 const invitationCodeService = new InvitationCodeService(invitationCodeRepo);
@@ -190,8 +201,15 @@ settingsRouter.post(
           );
         }
 
+        if (!isModelType(type)) {
+          throw new HttpError(
+            StatusCodes.BAD_REQUEST,
+            'type must be one of lmstudio, ollama, openai, openai-compatible'
+          );
+        }
+
         const maxContextLength = await fetchMaxContextLength(
-          type as ModelEntry['type'],
+          type,
           baseUrl,
           model,
           token || null
@@ -199,7 +217,7 @@ settingsRouter.post(
 
         const newEntry = await globalSettingService.addModel(
           {
-            type: type as ModelEntry['type'],
+            type,
             baseUrl,
             model,
             token: token || undefined,
@@ -310,8 +328,7 @@ settingsRouter.post(
     const sessionUser = req.user as SessionUser;
     const { toolName, approve } = req.body;
 
-    const validApproveValues = ['auto_approve', 'manual', 'banned'];
-    if (!toolName || !validApproveValues.includes(approve)) {
+    if (!toolName || !isApproveState(approve)) {
       throw new HttpError(
         StatusCodes.BAD_REQUEST,
         'toolName and approve (auto_approve | manual | banned) are required'
@@ -321,7 +338,7 @@ settingsRouter.post(
     const rule = await toolApprovalRuleService.upsert(
       sessionUser.id,
       toolName,
-      approve as 'auto_approve' | 'manual' | 'banned'
+      approve
     );
 
     res.json({ rule });
@@ -389,8 +406,7 @@ settingsRouter.put(
     const sessionUser = req.user as SessionUser;
     const { toolNames, approve } = req.body;
 
-    const validApproveValues = ['auto_approve', 'manual', 'banned'];
-    if (!Array.isArray(toolNames) || !validApproveValues.includes(approve)) {
+    if (!Array.isArray(toolNames) || !isApproveState(approve)) {
       throw new HttpError(
         StatusCodes.BAD_REQUEST,
         'toolNames (array) and approve (auto_approve | manual | banned) are required'
@@ -400,7 +416,7 @@ settingsRouter.put(
     await toolApprovalRuleService.bulkUpdate(
       sessionUser.id,
       toolNames,
-      approve as 'auto_approve' | 'manual' | 'banned'
+      approve
     );
 
     const rules = await toolApprovalRuleService.findByUserId(sessionUser.id);
@@ -965,6 +981,7 @@ interface GetPreferencesResponse {
   disabledMcpTools?: string[];
   executeCodeEnabled?: boolean;
   webSearchEnabled?: boolean;
+  webSearchExtendedTimeoutEnabled?: boolean;
 }
 
 settingsRouter.get(
@@ -992,6 +1009,7 @@ interface UpdatePreferencesRequest {
     disabledMcpTools?: string[];
     executeCodeEnabled?: boolean;
     webSearchEnabled?: boolean;
+    webSearchExtendedTimeoutEnabled?: boolean;
   };
 }
 
@@ -1014,7 +1032,8 @@ settingsRouter.patch(
       selectedKnowledgeIds,
       disabledMcpTools,
       executeCodeEnabled,
-      webSearchEnabled
+      webSearchEnabled,
+      webSearchExtendedTimeoutEnabled
     } = req.body;
     await userService.updateUserPreferences(sessionUser.id, {
       language,
@@ -1022,7 +1041,8 @@ settingsRouter.patch(
       selectedKnowledgeIds,
       disabledMcpTools,
       executeCodeEnabled,
-      webSearchEnabled
+      webSearchEnabled,
+      webSearchExtendedTimeoutEnabled
     });
     res.json({ success: true });
   })
@@ -1200,9 +1220,22 @@ interface BrandingResponse {
   faviconUrl: string | null;
 }
 
-function buildArtifactUrl(filename: string | undefined): string | null {
+function buildBrandingAssetUrl(
+  target: 'logo' | 'favicon',
+  filename: string | undefined
+): string | null {
   if (!filename) return null;
-  return `/api/upload/artifacts/${filename}`;
+  return `/api/settings/branding/${target}`;
+}
+
+function toBrandingResponse(
+  branding: Awaited<ReturnType<typeof globalSettingService.getBrandingSettings>>
+): BrandingResponse {
+  return {
+    appTitle: branding.appTitle ?? null,
+    logoUrl: buildBrandingAssetUrl('logo', branding.logoFilename),
+    faviconUrl: buildBrandingAssetUrl('favicon', branding.faviconFilename)
+  };
 }
 
 settingsRouter.get(
@@ -1212,11 +1245,7 @@ settingsRouter.get(
     res: express.Response<BrandingResponse | ErrorResponse>
   ) => {
     const branding = await globalSettingService.getBrandingSettings();
-    res.json({
-      appTitle: branding.appTitle ?? null,
-      logoUrl: buildArtifactUrl(branding.logoFilename),
-      faviconUrl: buildArtifactUrl(branding.faviconFilename)
-    });
+    res.json(toBrandingResponse(branding));
   }
 );
 
@@ -1247,11 +1276,7 @@ settingsRouter.put(
           { appTitle },
           sessionUser.id
         );
-        res.json({
-          appTitle: updated.appTitle ?? null,
-          logoUrl: buildArtifactUrl(updated.logoFilename),
-          faviconUrl: buildArtifactUrl(updated.faviconFilename)
-        });
+        res.json(toBrandingResponse(updated));
       } catch (error) {
         if (error instanceof BrandingValidationError) {
           throw new HttpError(StatusCodes.BAD_REQUEST, error.message);
@@ -1281,9 +1306,11 @@ async function uploadBrandingAssetHandler(
   const sessionUser = req.user as SessionUser;
   const fileBuffer = req.body as Buffer;
 
-  let uploaded: { filename: string; url: string };
+  let uploaded: { filename: string };
   try {
-    uploaded = await imageService.uploadImage(fileBuffer, { allowSvg: true });
+    uploaded = await imageService.uploadImage(fileBuffer, {
+      allowSvg: true
+    });
   } catch (err) {
     if (err instanceof ImageValidationError) {
       throw new HttpError(StatusCodes.BAD_REQUEST, err.message);
@@ -1299,11 +1326,7 @@ async function uploadBrandingAssetHandler(
     patch,
     sessionUser.id
   );
-  res.json({
-    appTitle: updated.appTitle ?? null,
-    logoUrl: buildArtifactUrl(updated.logoFilename),
-    faviconUrl: buildArtifactUrl(updated.faviconFilename)
-  });
+  res.json(toBrandingResponse(updated));
 }
 
 async function resetBrandingAssetHandler(
@@ -1318,12 +1341,39 @@ async function resetBrandingAssetHandler(
     patch,
     sessionUser.id
   );
-  res.json({
-    appTitle: updated.appTitle ?? null,
-    logoUrl: buildArtifactUrl(updated.logoFilename),
-    faviconUrl: buildArtifactUrl(updated.faviconFilename)
-  });
+  res.json(toBrandingResponse(updated));
 }
+
+async function serveBrandingAssetHandler(
+  res: express.Response,
+  target: 'logo' | 'favicon'
+): Promise<void> {
+  const branding = await globalSettingService.getBrandingSettings();
+  const filename =
+    target === 'logo' ? branding.logoFilename : branding.faviconFilename;
+  if (!filename) {
+    throw new HttpError(StatusCodes.NOT_FOUND, 'File not found');
+  }
+
+  try {
+    const { data, contentType } = await imageService.getArtifact(filename);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(data);
+  } catch (err) {
+    if (err instanceof ImageNotFoundError) {
+      throw new HttpError(StatusCodes.NOT_FOUND, err.message);
+    }
+    if (err instanceof ImageValidationError) {
+      throw new HttpError(StatusCodes.BAD_REQUEST, err.message);
+    }
+    throw err;
+  }
+}
+
+settingsRouter.get('/branding/logo', async (_req, res) => {
+  await serveBrandingAssetHandler(res, 'logo');
+});
 
 settingsRouter.put(
   '/branding/logo',
@@ -1347,6 +1397,10 @@ settingsRouter.delete(
     await resetBrandingAssetHandler(req, res, 'logo');
   }
 );
+
+settingsRouter.get('/branding/favicon', async (_req, res) => {
+  await serveBrandingAssetHandler(res, 'favicon');
+});
 
 settingsRouter.put(
   '/branding/favicon',

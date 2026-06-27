@@ -3,12 +3,14 @@ import { generateRandomId } from '@/lib/generateRandomId';
 
 /* eslint-disable react-refresh/only-export-components */
 
+export type DialogType = 'cancel/ok' | 'ok/cancel' | 'ok' | 'custom';
+
 interface DialogConfig {
   id: string;
   title?: ReactNode;
   description?: ReactNode;
   content?: ReactNode;
-  type: 'cancel/ok' | 'ok/cancel' | 'ok' | 'custom';
+  type: DialogType;
   okText: string;
   cancelText: string;
   showCloseButton: boolean;
@@ -22,7 +24,7 @@ interface DialogOpenConfig {
   title?: ReactNode;
   description?: ReactNode;
   content?: ReactNode;
-  type?: 'cancel/ok' | 'ok/cancel' | 'ok' | 'custom';
+  type?: DialogType;
   okText?: string;
   cancelText?: string;
   showCloseButton?: boolean;

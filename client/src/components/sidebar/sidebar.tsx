@@ -18,6 +18,11 @@ import { NewChatButton } from './new-chat-button';
 import { PinnedSection } from './pinned-section';
 import { HistorySection } from './history-section';
 import { UserProfile } from './user-profile';
+import { useSidebarMode } from '@/hooks/useSidebarMode';
+import { ModeTabs } from './mode-tabs';
+import { NewAgentTaskButton } from './new-agent-task-button';
+import { AgentPinnedSection } from './agent-pinned-section';
+import { AgentHistorySection } from './agent-history-section';
 
 function KnowledgeButton() {
   const navigate = useNavigate();
@@ -57,22 +62,42 @@ function SettingsButton() {
   );
 }
 
+function ChatMenu() {
+  return (
+    <SidebarMenu>
+      <NewChatButton />
+      <KnowledgeButton />
+      <PinnedSection />
+      <HistorySection />
+    </SidebarMenu>
+  );
+}
+
+function AgentMenu() {
+  return (
+    <SidebarMenu>
+      <NewAgentTaskButton />
+      <KnowledgeButton />
+      <AgentPinnedSection />
+      <AgentHistorySection />
+    </SidebarMenu>
+  );
+}
+
 export function Sidebar() {
   const { singleUserMode } = useUser();
+  const mode = useSidebarMode();
+
   return (
     <SidebarRoot data-testid="sidebar">
       <SidebarHeader>
         <SidebarLogo />
+        <ModeTabs />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu>
-              <NewChatButton />
-              <KnowledgeButton />
-              <PinnedSection />
-              <HistorySection />
-            </SidebarMenu>
+            {mode === 'agent' ? <AgentMenu /> : <ChatMenu />}
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

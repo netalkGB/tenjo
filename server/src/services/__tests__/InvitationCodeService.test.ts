@@ -27,7 +27,9 @@ function buildCode(overrides: Partial<InvitationCode> = {}): InvitationCode {
     used: false,
     used_by: null,
     created_by: 'user-1',
+    updated_by: 'user-1',
     created_at: new Date('2025-06-01T00:00:00.000Z'),
+    updated_at: new Date('2025-06-01T00:00:00.000Z'),
     ...overrides
   };
 }

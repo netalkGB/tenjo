@@ -7,6 +7,7 @@ import {
   validateFullName
 } from '../utils/validation';
 import { hashPassword } from '../utils/passwordHasher';
+import type { UserRole } from '../types/api';
 
 export class RegistrationValidationError extends ServiceError {}
 
@@ -55,7 +56,7 @@ export class RegistrationService {
 
     const hasAdmin = await this.userRepo.existsAdmin();
 
-    let userRole: 'admin' | 'standard' = 'standard';
+    let userRole: UserRole = 'standard';
 
     if (!hasAdmin) {
       userRole = 'admin';

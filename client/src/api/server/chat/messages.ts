@@ -158,7 +158,8 @@ export async function editAndResendMessage(
   imageUrls?: string[],
   knowledgeIds?: string[],
   executeCodeEnabled?: boolean,
-  webSearchEnabled?: boolean
+  webSearchEnabled?: boolean,
+  webSearchExtendedTimeoutEnabled?: boolean
 ): Promise<void> {
   try {
     const requestData = {
@@ -169,7 +170,9 @@ export async function editAndResendMessage(
       knowledgeIds:
         knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined,
       executeCodeEnabled: executeCodeEnabled || undefined,
-      webSearchEnabled: webSearchEnabled || undefined
+      webSearchEnabled: webSearchEnabled || undefined,
+      webSearchExtendedTimeoutEnabled:
+        webSearchExtendedTimeoutEnabled || undefined
     };
 
     const response = await fetch(
@@ -185,7 +188,7 @@ export async function editAndResendMessage(
 
     if (!response.ok) {
       throw new ApiError(
-        `HTTP error! status: ${response.status}`,
+        `Chat request failed: ${response.status}`,
         response.status
       );
     }
@@ -206,7 +209,8 @@ export async function sendMessageToThread(
   imageUrls?: string[],
   knowledgeIds?: string[],
   executeCodeEnabled?: boolean,
-  webSearchEnabled?: boolean
+  webSearchEnabled?: boolean,
+  webSearchExtendedTimeoutEnabled?: boolean
 ): Promise<void> {
   try {
     const requestData = NewChatRequestSchema.parse({
@@ -218,7 +222,9 @@ export async function sendMessageToThread(
       knowledgeIds:
         knowledgeIds && knowledgeIds.length > 0 ? knowledgeIds : undefined,
       executeCodeEnabled: executeCodeEnabled || undefined,
-      webSearchEnabled: webSearchEnabled || undefined
+      webSearchEnabled: webSearchEnabled || undefined,
+      webSearchExtendedTimeoutEnabled:
+        webSearchExtendedTimeoutEnabled || undefined
     });
 
     const response = await fetch(`/api/chat/threads/${threadId}/messages`, {
@@ -231,7 +237,7 @@ export async function sendMessageToThread(
 
     if (!response.ok) {
       throw new ApiError(
-        `HTTP error! status: ${response.status}`,
+        `Chat request failed: ${response.status}`,
         response.status
       );
     }

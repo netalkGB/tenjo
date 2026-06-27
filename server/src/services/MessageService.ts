@@ -14,8 +14,8 @@ import type { ThreadRepository } from '../repositories/ThreadRepository';
 import type { ToolApprovalRuleRepository } from '../repositories/ToolApprovalRuleRepository';
 import type { ModelConfig } from '../repositories/GlobalSettingRepository';
 import type { FileUploadService } from './FileUploadService';
-import { toolApprovalEmitter } from './ToolApprovalEmitter';
-import { createChatClient } from '../factories/chatClientFactory';
+import { toolApprovalEmitter } from '../events/ToolApprovalEmitter';
+import { generateTitle } from './TitleGenerationService';
 import { ServiceError } from '../errors/ServiceError';
 import logger from '../logger';
 
@@ -39,6 +39,35 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.png': 'image/png'
 };
+
+const LEGACY_ARTIFACT_URL_PATTERN =
+  /\/api\/upload\/artifacts\/([^"'\\\s)<?#]+)([?#][^"'\\\s)<]*)?/g;
+
+function normalizeLegacyArtifactUrls(data: unknown, threadId: string): unknown {
+  // Backward compatibility for messages saved before scoped artifact URLs.
+  if (typeof data === 'string') {
+    return data.replace(
+      LEGACY_ARTIFACT_URL_PATTERN,
+      (_match, filename: string, suffix: string | undefined) =>
+        `/api/chat/threads/${threadId}/artifacts/${filename}${suffix ?? ''}`
+    );
+  }
+
+  if (Array.isArray(data)) {
+    return data.map((item) => normalizeLegacyArtifactUrls(item, threadId));
+  }
+
+  if (data && typeof data === 'object') {
+    return Object.fromEntries(
+      Object.entries(data as Record<string, unknown>).map(([key, value]) => [
+        key,
+        normalizeLegacyArtifactUrls(value, threadId)
+      ])
+    );
+  }
+
+  return data;
+}
 
 export class MessageNotFoundError extends ServiceError {
   constructor(message: string = 'Message not found') {
@@ -118,7 +147,10 @@ export class MessageService {
 
   async resolveImageUrlToDataUri(url: string): Promise<string> {
     logger.debug('Resolving image URL:', url);
-    const match = url.match(/^\/api\/upload\/artifacts\/([^/]+\.(jpg|png))$/);
+    // Backward compatibility for image URLs saved by the removed upload API.
+    const match = url.match(
+      /^\/api\/(?:chat\/threads\/[^/]+\/artifacts|upload\/artifacts)\/([^/]+\.(jpg|png))$/
+    );
     if (!match) {
       logger.debug('Not a local artifact URL, returning as-is');
       return url;
@@ -152,6 +184,17 @@ export class MessageService {
     return message;
   }
 
+  async verifyMessageOwnership(
+    messageId: string,
+    userId: string
+  ): Promise<Message> {
+    const message = await this.messageRepo.findByIdAndUser(messageId, userId);
+    if (!message) {
+      throw new MessageNotFoundError('Message not found');
+    }
+    return message;
+  }
+
   private async enrichWithBranchStatus(
     rawMessages: Message[]
   ): Promise<ThreadMessage[]> {
@@ -163,7 +206,10 @@ export class MessageService {
         );
         return {
           ...msg,
-          data: msg.data as MessageRequest,
+          data: normalizeLegacyArtifactUrls(
+            msg.data,
+            msg.thread_id
+          ) as MessageRequest,
           currentCount: branchStatus?.current ?? null,
           totalCount: branchStatus?.total ?? null,
           siblings: branchStatus?.siblings ?? null
@@ -184,13 +230,17 @@ export class MessageService {
   }
 
   async getBranchStatuses(
+    userId: string,
     messageIds: string[]
   ): Promise<Record<string, BranchStatusInfo>> {
     const branchStatuses: Record<string, BranchStatusInfo> = {};
 
     await Promise.all(
       messageIds.map(async (messageId) => {
-        const message = await this.messageRepo.findById(messageId);
+        const message = await this.messageRepo.findByIdAndUser(
+          messageId,
+          userId
+        );
         if (message) {
           const branchStatus = await this.messageRepo.getBranchStatus(
             message.parent_message_id,
@@ -212,10 +262,12 @@ export class MessageService {
 
   async switchBranch(
     threadId: string,
+    userId: string,
     messageId: string,
     targetSiblingId: string
   ): Promise<{ messages: ThreadMessage[]; leafMessageId: string | undefined }> {
-    const message = await this.verifyMessageExists(messageId);
+    const message = await this.verifyMessageOwnership(messageId, userId);
+    await this.verifyMessageOwnership(targetSiblingId, userId);
 
     const parentId = message.parent_message_id;
     if (parentId) {
@@ -239,16 +291,26 @@ export class MessageService {
    * Returns the message path for the given message ID,
    * converted to context messages suitable for setting on a ChatClient.
    */
-  async getContextMessages(messageId: string): Promise<MessageRequest[]> {
+  async getContextMessages(
+    userId: string,
+    messageId: string
+  ): Promise<MessageRequest[]> {
+    await this.verifyMessageOwnership(messageId, userId);
     const messagePath = await this.messageRepo.findPath(messageId);
     return messagePath
       .filter((msg) => msg.data)
-      .map((msg) => msg.data as MessageRequest)
+      .map(
+        (msg) =>
+          normalizeLegacyArtifactUrls(msg.data, msg.thread_id) as MessageRequest
+      )
       .filter((msg) => msg.role !== 'system');
   }
 
-  async getUserPrompt(messageId: string): Promise<string> {
-    const assistantMessage = await this.verifyMessageExists(messageId);
+  async getUserPrompt(userId: string, messageId: string): Promise<string> {
+    const assistantMessage = await this.verifyMessageOwnership(
+      messageId,
+      userId
+    );
 
     if (!assistantMessage.parent_message_id) {
       throw new MessageValidationError(
@@ -275,74 +337,9 @@ export class MessageService {
     message: string,
     modelConfig: ModelConfig | null
   ): Promise<string | undefined> {
-    if (!modelConfig) {
-      return this.createFallbackTitle(message);
-    }
-
-    try {
-      const chatClient = createChatClient({
-        config: modelConfig,
-        systemPrompt: {
-          role: 'system',
-          content: [
-            {
-              type: 'text',
-              text: 'Do not use <think> tags. Respond directly. Summarize.'
-            }
-          ]
-        }
-      });
-
-      // Abort after enough characters or timeout to avoid long waits
-      const MAX_TITLE_CHARS = 50;
-      const TIMEOUT_MS = 30000;
-      const abortController = new AbortController();
-      let collected = '';
-
-      const timeout = setTimeout(() => {
-        abortController.abort();
-      }, TIMEOUT_MS);
-
-      // Ignore thinking chunks — only collect actual response text
-      chatClient.setThinkingHandler(() => {});
-      chatClient.setMessageHandler((chunk: string) => {
-        collected += chunk;
-        if (collected.length >= MAX_TITLE_CHARS) {
-          abortController.abort();
-        }
-      });
-
-      try {
-        await chatClient.sendMessage(
-          `Summarize the following in ~15 characters, preserving the original language: ${message}`,
-          undefined,
-          { signal: abortController.signal }
-        );
-      } catch (error) {
-        if (!(error instanceof Error && error.name === 'AbortError')) {
-          throw error;
-        }
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      const title = collected.trim();
-      if (!title) return this.createFallbackTitle(message);
-      return title.slice(0, 150) || undefined;
-    } catch (error) {
-      logger.warn('Failed to generate title via LLM, using fallback', {
-        error: error instanceof Error ? error.message : String(error)
-      });
-      return this.createFallbackTitle(message);
-    }
-  }
-
-  private createFallbackTitle(message: string): string {
-    const trimmed = message.trim();
-    if (trimmed.length <= 30) {
-      return trimmed;
-    }
-    return `${trimmed.slice(0, 30)}...`;
+    // Shared with the coding-agent (see services/TitleGenerationService.ts) so both
+    // title the same way.
+    return generateTitle(message, modelConfig);
   }
 
   async processMessageStream(
@@ -395,6 +392,10 @@ export class MessageService {
 
     // Mapping from data URIs (sent to LLM) to original URLs (for DB storage)
     const dataUriToOriginalUrl = new Map<string, string>();
+
+    if (parentMessageId) {
+      await this.verifyMessageOwnership(parentMessageId, userId);
+    }
 
     // Save to DB when a message is added
     chatClient.onMessageAdded(async (msg: MessageRequest) => {

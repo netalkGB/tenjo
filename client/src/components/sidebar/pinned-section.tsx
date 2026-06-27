@@ -53,7 +53,7 @@ export function PinnedSection() {
             : pinnedHistories.map(item => (
                 <ChatHistoryItem
                   key={item.id}
-                  title={item.title === '' ? '-' : item.title}
+                  title={item.title}
                   id={item.id}
                   pinned
                 />

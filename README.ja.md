@@ -1,14 +1,18 @@
 # Tenjo
 
-複数のAIプロバイダー（LM Studio、Ollama）、MCP（Model Context Protocol）、Web検索機能、コード実行機能、HTMLプレビュー機能に対応したセルフホスト型AIチャットインターフェースです。
+LM Studio / Ollama などのローカルLLMサーバーに対応した、セルフホスト型のAIチャット・エージェント環境です。MCP（Model Context Protocol）、Web検索、知識、コード実行、ブラウザ/GUIプレビューに対応しています。
 
 <table align="center">
   <tr>
-    <td colspan="2" align="center"><img width="600" alt="スクリーンショット" src="https://github.com/user-attachments/assets/7fbdc9fa-9785-4be3-97b8-4ab28b1053f7" /></td>
+    <td colspan="2" align="center"><img width="520" alt="スクリーンショット" src="https://github.com/user-attachments/assets/699ff1a9-e691-4319-a7a1-7554e9656c12" /></td>
   </tr>
   <tr>
-    <td><img width="450" alt="スクリーンショット" src="https://github.com/user-attachments/assets/12852608-122a-4f4d-9bba-6c717ee2b800" /></td>
-    <td><img width="450" alt="スクリーンショット" src="https://github.com/user-attachments/assets/3c81b0d9-28df-4f31-836e-ad4d396b380a" /></td>
+    <td><img width="240" alt="スクリーンショット" src="https://github.com/user-attachments/assets/0b1f2045-7e77-43dc-9e76-c1c85697d7b5" /></td>
+    <td><img width="240" alt="スクリーンショット" src="https://github.com/user-attachments/assets/699b0fc8-5b85-473c-9e11-d3793b578625" /></td>
+  </tr>
+  <tr>
+    <td><img width="240" alt="スクリーンショット" src="https://github.com/user-attachments/assets/1a3eeb45-b930-4f7c-b730-e50139422ea6" /></td>
+    <td><img width="240" alt="スクリーンショット" src="https://github.com/user-attachments/assets/6bff6897-adbe-4f71-a739-589aeaca8353" /></td>
   </tr>
 </table>
 
@@ -16,20 +20,21 @@
 
 - Node.js（v24推奨）
 - PostgreSQL（v18推奨）
+- Docker
 
 ## セットアップ
 
 ### 1. 依存パッケージのインストール
 
-**ブラウザエージェント（Web検索機能）を使用する場合:**
+初回セットアップでは、基本的に次を実行してください。
 
 ```bash
 npm run setup
 ```
 
-すべての依存パッケージをインストールし、ブラウザエージェントに必要なChromiumもインストールします。
+これは各workspaceの依存関係を `npm ci` でインストールしたあと、`npm -w chat-engine run setup:browser-deps` で Playwright Chromium の実行に必要なOSパッケージをインストールします。Web検索やブラウザ操作を使う場合はこちらを使ってください。
 
-**ブラウザエージェントを使用しない場合:**
+コアのチャットUIだけを使う場合や、Chromiumの実行環境がすでに整っている場合は次でも構いません。
 
 ```bash
 npm ci
@@ -37,7 +42,13 @@ npm ci
 
 ### 2. 環境変数の設定
 
-`server/.env` を作成してください。以下は設定例です。値はご自身の環境に合わせて変更してください。
+サンプルから `server/.env` を作成し、環境に合わせて値を変更してください。
+
+```bash
+cp server/.env.sample server/.env
+```
+
+設定例:
 
 ```
 NODE_ENV=production
@@ -52,15 +63,16 @@ BASE_URL=https://chat.example.com
 
 | 変数 | 説明 |
 |---|---|
+| `NODE_ENV` | `development`、`production`、`test` のいずれか |
 | `DATABASE_URL` | PostgreSQL接続文字列 |
-| `DATABASE_SCHEMA` | PostgreSQLスキーマ名 |
+| `DATABASE_SCHEMA` | PostgreSQLスキーマ名。未指定時は `public` |
 | `SESSION_SECRET` | セッション暗号化に使用するシークレット |
 | `LISTEN_HOST` | バインドするホストアドレス |
 | `LISTEN_PORT` | 待ち受けるポート番号 |
 | `DATA_DIR` | データディレクトリのパス（デフォルト: サーバー実行ディレクトリ直下の `files/`） |
 | `SINGLE_USER_MODE` | `true` に設定するとシングルユーザーモードで動作 |
 | `ENCRYPTION_KEY` | DBに保存される認証情報（APIキー、OAuthトークン等）の暗号化キー |
-| `BASE_URL` | アプリケーションの公開ベースURL（例: `https://chat.example.com`） |
+| `BASE_URL` | アプリケーションの公開ベースURL |
 
 ### 3. ビルドと起動
 
@@ -75,6 +87,18 @@ npm run dev
 ```
 
 > **注意:** 開発時は環境変数 `LISTEN_PORT` を `3000` にしてください。Viteの開発サーバーはAPIリクエストを `localhost:3000` にプロキシするため、ポートを変更するとプロキシが動作しなくなります。
+
+## サンドボックス（エージェント）
+
+エージェントはサンドボックスコンテナ内で動作するため、Dockerが必要です。
+
+Linuxでは、Tenjoのサーバープロセスの実行ユーザーにDockerを操作する権限が必要です。たとえば、そのユーザーを `docker` グループに追加するなどの設定が必要です。
+
+Tenjoは以下のDockerリソースを作成・管理します。
+
+- コンテナ: `tenjo-sandbox`
+- イメージ: `tenjo-agent-sandbox:*`
+- ボリューム: `tenjo-sandbox-data`
 
 ## FAQ
 

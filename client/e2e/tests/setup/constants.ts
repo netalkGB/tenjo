@@ -1,6 +1,9 @@
 export const ADMIN_FULL_NAME = 'admin';
 export const ADMIN_USER_NAME = 'adminUser';
 export const ADMIN_PASSWORD = 'P@ssw0rd';
+export const AGENT_ADMIN_FULL_NAME = 'agentAdmin';
+export const AGENT_ADMIN_USER_NAME = 'agentAdminUser';
+export const AGENT_ADMIN_PASSWORD = 'P@ssw0rd';
 export const NORMAL_FULL_NAME = 'normal';
 export const NORMAL_USER_NAME = 'normalUser';
 export const NORMAL_PASSWORD = 'P@ssw0rd';

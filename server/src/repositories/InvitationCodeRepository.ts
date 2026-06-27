@@ -1,23 +1,28 @@
 import { BaseRepository } from './BaseRepository';
+import type { UserRole } from '../types/api';
 
 export interface InvitationCode {
   id: string;
   code: string;
-  user_role: 'admin' | 'standard';
+  user_role: UserRole;
   used: boolean;
   used_by: string | null;
   created_by: string | null;
+  updated_by: string | null;
   created_at: Date | null;
+  updated_at: Date | null;
 }
 
 export interface InsertInvitationCode {
   id?: string;
   code?: string;
-  user_role?: 'admin' | 'standard';
+  user_role?: UserRole;
   used?: boolean;
   used_by?: string | null;
   created_by?: string | null;
+  updated_by?: string | null;
   created_at?: Date | null;
+  updated_at?: Date | null;
 }
 
 const COLUMNS = [
@@ -27,7 +32,9 @@ const COLUMNS = [
   'used',
   'used_by',
   'created_by',
-  'created_at'
+  'updated_by',
+  'created_at',
+  'updated_at'
 ] as const;
 
 export class InvitationCodeRepository extends BaseRepository {
@@ -47,14 +54,19 @@ export class InvitationCodeRepository extends BaseRepository {
   async create(data: InsertInvitationCode): Promise<InvitationCode> {
     return await this.insertReturning<InvitationCode>(
       'invitation_codes',
-      { ...data },
+      { ...data, updated_by: data.updated_by ?? data.created_by },
       COLUMNS
     );
   }
 
   async markUsed(code: string, userId: string): Promise<void> {
     await this.pool.query(
-      `UPDATE "invitation_codes" SET "used" = true, "used_by" = $1 WHERE "code" = $2`,
+      `UPDATE "invitation_codes"
+          SET "used" = true,
+              "used_by" = $1,
+              "updated_by" = $1,
+              "updated_at" = now()
+        WHERE "code" = $2`,
       [userId, code]
     );
   }

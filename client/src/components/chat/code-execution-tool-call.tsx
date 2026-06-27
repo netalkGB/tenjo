@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { parse as parsePartialJson, Allow } from 'partial-json';
 import { useTranslation } from '@/hooks/useTranslation';
+import { fencedCode } from '@/lib/codeFence';
 import { MarkdownRenderer } from './markdown-renderer';
 import type { ToolCallInfo } from './tool-call-section';
 
@@ -113,7 +114,7 @@ export function CodeExecutionToolCall({
               {t('code_exec_source')}
             </div>
             {code ? (
-              <MarkdownRenderer markdown={fenced(code, codeLanguage)} />
+              <MarkdownRenderer markdown={fencedCode(code, codeLanguage)} />
             ) : isStreaming ? (
               <div className="flex items-center gap-2 text-xs italic text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -174,29 +175,6 @@ interface ConsoleOutputProps {
   hasError: boolean;
 }
 
-/**
- * Picks a code-fence length longer than any backtick run inside the content,
- * so user output containing literal ``` doesn't terminate the block early.
- */
-function makeFence(content: string): string {
-  let max = 2;
-  const matches = content.match(/`+/g);
-  if (matches) {
-    for (const m of matches) {
-      if (m.length > max) max = m.length;
-    }
-  }
-  return '`'.repeat(max + 1);
-}
-
-function fenced(content: string, language: string): string {
-  // Strip trailing newlines so console.log's implicit '\n' doesn't render as a
-  // blank line before the closing fence. Copy still gets the visible content.
-  const trimmed = content.replace(/\n+$/, '');
-  const fence = makeFence(trimmed);
-  return `${fence}${language}\n${trimmed}\n${fence}`;
-}
-
 function ConsoleOutput({ isRunning, result, hasError }: ConsoleOutputProps) {
   const { t } = useTranslation();
 
@@ -218,7 +196,7 @@ function ConsoleOutput({ isRunning, result, hasError }: ConsoleOutputProps) {
   }
 
   if (result.error && !result.stdout && !result.stderr) {
-    return <MarkdownRenderer markdown={fenced(result.error, 'error')} />;
+    return <MarkdownRenderer markdown={fencedCode(result.error, 'error')} />;
   }
 
   const hasStdout = !!result.stdout;
@@ -235,10 +213,10 @@ function ConsoleOutput({ isRunning, result, hasError }: ConsoleOutputProps) {
   return (
     <div className="space-y-2">
       {result.stdout && (
-        <MarkdownRenderer markdown={fenced(result.stdout, 'stdout')} />
+        <MarkdownRenderer markdown={fencedCode(result.stdout, 'stdout')} />
       )}
       {result.stderr && (
-        <MarkdownRenderer markdown={fenced(result.stderr, 'stderr')} />
+        <MarkdownRenderer markdown={fencedCode(result.stderr, 'stderr')} />
       )}
     </div>
   );

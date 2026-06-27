@@ -16,7 +16,11 @@ interface KnowledgePickerProps {
   onToggle: (id: string) => void;
 }
 
-export function KnowledgePicker({
+/**
+ * Searchable knowledge checklist. Shared between the chat input popover and
+ * the agent options menu drill-down view.
+ */
+export function KnowledgePanel({
   selectedIds,
   onToggle
 }: KnowledgePickerProps) {
@@ -29,6 +33,51 @@ export function KnowledgePicker({
         k.name.toLowerCase().includes(search.toLowerCase())
       )
     : knowledgeList;
+
+  return (
+    <>
+      <div className="mb-2">
+        <Input
+          placeholder={t('knowledge_search')}
+          value={search}
+          data-testid="chat-input-knowledge-search"
+          onChange={e => setSearch(e.target.value)}
+          className="h-8 text-sm"
+        />
+      </div>
+      <div className="max-h-60 overflow-y-auto space-y-1">
+        {filtered.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2 text-center">
+            {t('knowledge_no_entries')}
+          </p>
+        ) : (
+          filtered.map(entry => (
+            <label
+              key={entry.id}
+              className="flex items-center gap-2 py-1 px-1 rounded hover:bg-accent cursor-pointer"
+              data-testid={`chat-input-knowledge-item-${entry.id}`}
+            >
+              <Checkbox
+                checked={selectedIds.has(entry.id)}
+                onCheckedChange={() => onToggle(entry.id)}
+              />
+              <span className="text-sm truncate" title={entry.name}>
+                {entry.name}
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+export function KnowledgePicker({
+  selectedIds,
+  onToggle
+}: KnowledgePickerProps) {
+  const { t } = useTranslation();
+  const { knowledgeList } = useSettings();
 
   if (knowledgeList.length === 0) return null;
 
@@ -50,38 +99,7 @@ export function KnowledgePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-3">
-        <div className="mb-2">
-          <Input
-            placeholder={t('knowledge_search')}
-            value={search}
-            data-testid="chat-input-knowledge-search"
-            onChange={e => setSearch(e.target.value)}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="max-h-60 overflow-y-auto space-y-1">
-          {filtered.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2 text-center">
-              {t('knowledge_no_entries')}
-            </p>
-          ) : (
-            filtered.map(entry => (
-              <label
-                key={entry.id}
-                className="flex items-center gap-2 py-1 px-1 rounded hover:bg-accent cursor-pointer"
-                data-testid={`chat-input-knowledge-item-${entry.id}`}
-              >
-                <Checkbox
-                  checked={selectedIds.has(entry.id)}
-                  onCheckedChange={() => onToggle(entry.id)}
-                />
-                <span className="text-sm truncate" title={entry.name}>
-                  {entry.name}
-                </span>
-              </label>
-            ))
-          )}
-        </div>
+        <KnowledgePanel selectedIds={selectedIds} onToggle={onToggle} />
       </PopoverContent>
     </Popover>
   );

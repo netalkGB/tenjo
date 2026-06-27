@@ -569,7 +569,7 @@ describe('McpToolService', () => {
       expect(mockCreateHttpTransportWithFallback).not.toHaveBeenCalled();
     });
 
-    it('should proceed when token has no expires_at (backwards compatibility)', async () => {
+    it('should proceed when token has no expires_at', async () => {
       const tokenData = JSON.stringify({ access_token: 'test-token' });
       mockCredentialStore.load.mockResolvedValue(tokenData);
 

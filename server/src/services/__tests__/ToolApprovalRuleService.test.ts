@@ -28,6 +28,8 @@ function buildRule(
     user_id: 'user-1',
     tool_name: 'read_file',
     approve: 'auto_approve',
+    created_by: 'user-1',
+    updated_by: 'user-1',
     created_at: new Date('2025-06-01T00:00:00.000Z'),
     updated_at: new Date('2025-06-01T00:00:00.000Z'),
     ...overrides

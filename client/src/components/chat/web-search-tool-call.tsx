@@ -31,12 +31,6 @@ interface WebSearchResult {
    * the client never has to know the search-engine URL format.
    */
   searches?: SearchEntry[];
-  /**
-   * Legacy field for results persisted before the {@link searches} shape
-   * existed — query strings only, no URLs. Kept so historical threads still
-   * render their searches; new requests should populate `searches` instead.
-   */
-  distinctQueries?: string[];
   visitedUrls?: string[];
   timedOut?: boolean;
   error?: string;
@@ -44,15 +38,6 @@ interface WebSearchResult {
 
 function resolveSearchEntries(result: WebSearchResult | null): SearchEntry[] {
   if (result?.searches && result.searches.length > 0) return result.searches;
-  if (result?.distinctQueries && result.distinctQueries.length > 0) {
-    // Fallback for messages stored before the server began emitting
-    // {query, url} pairs. Reconstruct the SERP URL client-side using the
-    // same format the server uses today so the link target stays correct.
-    return result.distinctQueries.map(query => ({
-      query,
-      url: `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
-    }));
-  }
   return [];
 }
 

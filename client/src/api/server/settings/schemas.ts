@@ -208,7 +208,8 @@ export const UserPreferencesResponseSchema = z.object({
   selectedKnowledgeIds: z.array(z.string()).optional(),
   disabledMcpTools: z.array(z.string()).optional(),
   executeCodeEnabled: z.boolean().optional(),
-  webSearchEnabled: z.boolean().optional()
+  webSearchEnabled: z.boolean().optional(),
+  webSearchExtendedTimeoutEnabled: z.boolean().optional()
 });
 
 export type UserPreferencesResponse = z.infer<
@@ -222,6 +223,7 @@ export interface UpdatePreferencesRequest {
   disabledMcpTools?: string[];
   executeCodeEnabled?: boolean;
   webSearchEnabled?: boolean;
+  webSearchExtendedTimeoutEnabled?: boolean;
 }
 
 // Cleanup

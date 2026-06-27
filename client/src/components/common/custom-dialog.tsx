@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import type { DialogType } from '@/contexts/dialog-context';
 
 interface CustomDialogProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface CustomDialogProps {
   showCloseButton: boolean;
   closeOnOutsideClick?: boolean;
   modal?: boolean;
-  type: 'cancel/ok' | 'ok/cancel' | 'ok' | 'custom';
+  type: DialogType;
   okText?: string;
   cancelText?: string;
   title?: React.ReactNode;

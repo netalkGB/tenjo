@@ -9,6 +9,18 @@ function getArtifactsDir(): string {
   return path.join(getDataDir(), 'artifacts');
 }
 
+const UNREFERENCED_FILE_GRACE_PERIOD_MS = 30 * 60 * 1000;
+// Backward compatibility for artifact URLs saved before scoped chat URLs.
+const ARTIFACT_URL_FILENAME_PATTERN =
+  '(?:/api/chat/threads/[^"\\\\/?#]+/artifacts|/api/upload/artifacts)/([^"\\\\/?#]+)(?:[?#][^"\\\\]*)?';
+
+function addFilename(referenced: Set<string>, value: string): void {
+  const filename = path.basename(value);
+  if (filename.length > 0 && filename !== '.' && filename !== '..') {
+    referenced.add(filename);
+  }
+}
+
 export interface CleanupStatus {
   cleaning: boolean;
   totalSizeBytes: number;
@@ -78,6 +90,7 @@ export class FileCleanupService {
         try {
           const stat = await fs.stat(filePath);
           if (!stat.isFile()) continue;
+          if (!this.isEligibleForDeletion(stat.mtimeMs)) continue;
 
           await fs.unlink(filePath);
           deletedCount++;
@@ -102,35 +115,25 @@ export class FileCleanupService {
     }
   }
 
-  /**
-   * Get all filenames referenced in messages (image URLs) and knowledge (fs_path).
-   */
+  /** Get all artifact filenames still referenced by persisted application data. */
   private async getReferencedFiles(): Promise<Set<string>> {
     const referenced = new Set<string>();
 
-    // Extract image filenames from messages.data JSONB
-    // Image URLs are stored as /api/upload/artifacts/{filename}
-    const imageResult = await this.pool.query<{ filename: string }>(`
+    // Extract artifact filenames from the whole message JSON. User images are
+    // stored in content[].image_url.url, but older or tool-produced messages can
+    // still contain artifact URLs elsewhere in the persisted payload.
+    const messageResult = await this.pool.query<{ filename: string }>(`
       SELECT DISTINCT match[1] AS filename
       FROM messages,
-           LATERAL jsonb_array_elements(
-             CASE jsonb_typeof(data->'content')
-               WHEN 'array' THEN data->'content'
-               ELSE '[]'::jsonb
-             END
-           ) AS elem,
-           LATERAL (
-             SELECT regexp_match(
-               elem->'image_url'->>'url',
-               '/api/upload/artifacts/([^/]+)$'
-             ) AS match
-           ) AS m
-      WHERE elem->>'type' = 'image_url'
-        AND match IS NOT NULL
+           LATERAL regexp_matches(
+             data::text,
+             '${ARTIFACT_URL_FILENAME_PATTERN}',
+             'g'
+           ) AS match
     `);
 
-    for (const row of imageResult.rows) {
-      referenced.add(row.filename);
+    for (const row of messageResult.rows) {
+      addFilename(referenced, row.filename);
     }
 
     // Extract filenames from knowledge.fs_path
@@ -139,20 +142,24 @@ export class FileCleanupService {
     );
 
     for (const row of knowledgeResult.rows) {
-      const filename = path.basename(row.fs_path);
-      referenced.add(filename);
+      addFilename(referenced, row.fs_path);
     }
 
     // Extract branding filenames (logo, favicon) from global_settings
     const globalSettings = await this.globalSettingRepo.getSettings();
     if (globalSettings.branding?.logoFilename) {
-      referenced.add(globalSettings.branding.logoFilename);
+      addFilename(referenced, globalSettings.branding.logoFilename);
     }
     if (globalSettings.branding?.faviconFilename) {
-      referenced.add(globalSettings.branding.faviconFilename);
+      addFilename(referenced, globalSettings.branding.faviconFilename);
     }
 
     return referenced;
+  }
+
+  private isEligibleForDeletion(mtimeMs: number): boolean {
+    if (!Number.isFinite(mtimeMs)) return true;
+    return Date.now() - mtimeMs >= UNREFERENCED_FILE_GRACE_PERIOD_MS;
   }
 
   private async calculateTotalSize(): Promise<number> {

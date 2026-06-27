@@ -7,7 +7,7 @@ import {
 } from '../setup/constants';
 import { login } from '../../helpers/auth';
 
-const MODEL_NAME = 'openai/gpt-oss-20b';
+const MODEL_NAME = 'openai/gpt-oss-20b-settings-e2e';
 const BASE_URL = 'http://localhost:1234/';
 
 async function logoutAndWait(page: import('@playwright/test').Page) {
@@ -19,7 +19,7 @@ async function logoutAndWait(page: import('@playwright/test').Page) {
 
 test.describe
   .serial('model settings', () => {
-    test('admin: add model via LM Studio, verify in list and chat dropdown, then delete', async ({
+  test('admin: add model via LM Studio, verify in list and chat dropdown, then delete', async ({
       page
     }) => {
       test.setTimeout(120_000);
@@ -27,10 +27,11 @@ test.describe
 
       // Navigate to model settings
       await page.goto('/settings/models');
+      const modelItemsLocator = page.locator('[data-testid^="settings-model-item-"]');
 
       // Wait for model list to load (at least the setup model should be visible)
       await expect(
-        page.locator('[data-testid^="settings-model-item-"]').first()
+        modelItemsLocator.first()
       ).toBeVisible({ timeout: 15000 });
 
       // Delete the model if it already exists (e.g. left over from another test)
@@ -85,10 +86,11 @@ test.describe
       // Submit
       await page.getByTestId('settings-model-add-submit-button').click();
 
-      // Wait for dialog to close and model to appear in the settings list
-      await expect(page.getByText(MODEL_NAME).first()).toBeVisible({
-        timeout: 10000
-      });
+      // Wait for dialog to close and confirm the model appears in the list.
+      // Parallel runs can mutate shared model state, so we check by identity,
+      // not by absolute count.
+      await expect(modelItemsLocator.filter({ hasText: MODEL_NAME }).first())
+        .toBeVisible({ timeout: 30000 });
 
       // Navigate to new chat and verify model is in the dropdown
       await page.getByTestId('sidebar-new-chat-button').click();
@@ -111,14 +113,13 @@ test.describe
       await page.goto('/settings/models');
 
       // Find the model item and click its delete button
-      const modelItem = page.getByText(MODEL_NAME).first();
-      await expect(modelItem).toBeVisible();
+      const modelItem = page
+        .locator('[data-testid^="settings-model-item-"]')
+        .filter({ hasText: MODEL_NAME })
+        .first();
+      await expect(modelItem).toBeVisible({ timeout: 10000 });
 
-      // Get the model's delete button from its container
-      const modelContainer = modelItem.locator(
-        'xpath=ancestor::div[@data-testid]'
-      );
-      const testId = await modelContainer.getAttribute('data-testid');
+      const testId = await modelItem.getAttribute('data-testid');
       const modelId = testId?.replace('settings-model-item-', '');
 
       await page.getByTestId(`settings-model-delete-button-${modelId}`).click();
@@ -127,7 +128,7 @@ test.describe
       await page.getByTestId('dialog-ok-button').click();
 
       // Verify model is removed from the list
-      await expect(page.getByText(MODEL_NAME)).not.toBeVisible();
+      await expect(modelItem).not.toBeVisible({ timeout: 15000 });
 
       // Navigate to new chat and verify model is removed from the dropdown
       await page.getByTestId('sidebar-new-chat-button').click();

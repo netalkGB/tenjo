@@ -76,7 +76,9 @@ const makeInvitationCode = (
   used: false,
   used_by: null,
   created_by: 'admin-1',
+  updated_by: 'admin-1',
   created_at: new Date('2025-01-01'),
+  updated_at: new Date('2025-01-01'),
   ...overrides
 });
 

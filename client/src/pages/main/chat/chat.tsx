@@ -21,6 +21,7 @@ import {
   approveToolCall,
   stopGeneration
 } from '@/api/server/chat';
+import { uploadImage } from '@/api/server/chat/upload';
 import { upsertToolApprovalRule } from '@/api/server/settings';
 import type {
   ToolCallEvent,
@@ -81,7 +82,8 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
     selectedKnowledge,
     toggleKnowledge,
     executeCodeEnabled,
-    webSearchEnabled
+    webSearchEnabled,
+    webSearchExtendedTimeoutEnabled
   } = useSettings();
   const { openDialog } = useDialog();
   const { t } = useTranslation();
@@ -430,7 +432,8 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         imageUrls,
         selectedKnowledge.size > 0 ? [...selectedKnowledge] : undefined,
         executeCodeEnabled,
-        webSearchEnabled
+        webSearchEnabled,
+        webSearchExtendedTimeoutEnabled
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -618,7 +621,8 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
         imageUrls.length > 0 ? imageUrls : undefined,
         knowledgeIds.length > 0 ? knowledgeIds : undefined,
         executeCodeEnabled,
-        webSearchEnabled
+        webSearchEnabled,
+        webSearchExtendedTimeoutEnabled
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -807,6 +811,9 @@ function ChatContent({ threadId, dataPromise }: ChatContentProps) {
           <div className="px-4 py-4 w-full mx-auto md:p-6 md:w-[85%]">
             <ChatInput
               onSendMessage={handleSendMessage}
+              uploadImageFile={(file, onProgress) =>
+                uploadImage(threadId, file, onProgress)
+              }
               isStreaming={isLocked}
               isGeneratingLocked={isGeneratingLocked}
               onStop={handleStopStreaming}

@@ -9,6 +9,8 @@ import { CredentialStoreRepository } from './CredentialStoreRepository';
 import { PendingOAuthFlowRepository } from './PendingOAuthFlowRepository';
 import { KnowledgeRepository } from './KnowledgeRepository';
 import { ImageAnalysisCacheRepository } from './ImageAnalysisCacheRepository';
+import { AgentProjectRepository } from './AgentProjectRepository';
+import { AgentMessageRepository } from './AgentMessageRepository';
 
 export const threadRepo = new ThreadRepository(pool);
 export const messageRepo = new MessageRepository(pool);
@@ -20,3 +22,5 @@ export const credentialStoreRepo = new CredentialStoreRepository(pool);
 export const pendingOAuthFlowRepo = new PendingOAuthFlowRepository(pool);
 export const knowledgeRepo = new KnowledgeRepository(pool);
 export const imageAnalysisCacheRepo = new ImageAnalysisCacheRepository(pool);
+export const agentProjectRepo = new AgentProjectRepository(pool);
+export const agentMessageRepo = new AgentMessageRepository(pool);

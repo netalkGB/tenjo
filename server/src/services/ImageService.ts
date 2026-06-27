@@ -1,7 +1,7 @@
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { ServiceError } from '../errors/ServiceError';
 import logger from '../logger';
+import { generateUuidV4 } from '../utils/generateUuidV4';
 import type { FileUploadService } from './FileUploadService';
 
 export class ImageNotFoundError extends ServiceError {
@@ -55,7 +55,6 @@ function detectSvgFormat(buffer: Buffer): string | null {
 
 export interface UploadResult {
   filename: string;
-  url: string;
 }
 
 export interface UploadImageOptions {
@@ -89,15 +88,12 @@ export class ImageService {
       );
     }
 
-    const id = crypto.randomUUID();
+    const id = generateUuidV4();
     const filename = `${id}${ext}`;
 
     await this.fileUploadService.save(filename, fileBuffer);
 
-    return {
-      filename,
-      url: `/api/upload/artifacts/${filename}`
-    };
+    return { filename };
   }
 
   async getArtifact(

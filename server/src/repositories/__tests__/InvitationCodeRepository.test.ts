@@ -54,6 +54,8 @@ describe('InvitationCodeRepository (Integration Tests)', () => {
       expect(code.used).toBe(false);
       expect(code.used_by).toBeNull();
       expect(code.user_role).toBe('standard');
+      expect(code.updated_by).toBe(testUserId);
+      expect(code.updated_at).toBeDefined();
     });
 
     it('should create an invitation code with admin role', async () => {
@@ -124,6 +126,8 @@ describe('InvitationCodeRepository (Integration Tests)', () => {
       const found = await invitationCodeRepository.findByCode(created.code);
       expect(found?.used).toBe(true);
       expect(found?.used_by).toBe(testUserId);
+      expect(found?.updated_by).toBe(testUserId);
+      expect(found?.updated_at).toBeDefined();
     });
   });
 

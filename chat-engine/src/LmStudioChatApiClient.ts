@@ -22,37 +22,15 @@ interface LmStudioV0ModelEntry {
   capabilities?: string[];
 }
 
-// --- LM Studio API types (v1: POST /api/v1/models/load) ---
-
 interface LmStudioLoadModelRequest {
   model: string;
   context_length?: number;
-  eval_batch_size?: number;
-  flash_attention?: boolean;
-  num_experts?: number;
-  offload_kv_cache_to_gpu?: boolean;
-  echo_load_config?: boolean;
 }
-
-interface LmStudioLoadModelResponse {
-  type: 'llm' | 'embedding';
-  instance_id: string;
-  load_time_seconds: number;
-  status: 'loaded';
-  load_config?: LmStudioLoadConfig;
-}
-
-interface LmStudioLoadConfig {
-  context_length: number;
-  eval_batch_size?: number;
-  flash_attention?: boolean;
-  num_experts?: number;
-  offload_kv_cache_to_gpu?: boolean;
-}
-
-// ---
 
 export class LmStudioChatApiClient extends LocalChatApiClient {
+  private modelLoaded = false;
+  private modelLoadPromise: Promise<void> | null = null;
+
   /**
    * Fetch the max context length from LM Studio's /api/v0/models endpoint.
    */
@@ -62,21 +40,43 @@ export class LmStudioChatApiClient extends LocalChatApiClient {
     return entry?.max_context_length ?? null;
   }
 
-  protected override async loadModelIfNeeded(): Promise<void> {
-    const models = await this.fetchModels();
-    const entry = models?.find((m) => m.id === this.model);
+  protected override async getChatCompletionRequestOptions(): Promise<
+    Record<string, unknown>
+  > {
+    await this.ensureModelLoaded();
+    return {};
+  }
+
+  private async ensureModelLoaded(): Promise<void> {
+    if (this.modelLoaded) return;
+    if (this.modelLoadPromise) {
+      await this.modelLoadPromise;
+      return;
+    }
+
+    const load = this.loadModelIfNeeded().then(() => {
+      this.modelLoaded = true;
+    });
+    this.modelLoadPromise = load;
+    try {
+      await load;
+    } finally {
+      if (this.modelLoadPromise === load) {
+        this.modelLoadPromise = null;
+      }
+    }
+  }
+
+  private async loadModelIfNeeded(): Promise<void> {
+    const entry = await this.getModelEntry();
     if (!entry) return;
 
-    // Already loaded — use as-is regardless of context length.
-    // Calling the load endpoint on an already-loaded model may
-    // create a different variant (e.g. "model:2").
-    if (entry.state === 'loaded') return;
-
-    // Not loaded — load with max context
-    await this.loadModel({
-      model: entry.id,
-      context_length: entry.max_context_length,
-    });
+    if (entry.state === 'not-loaded') {
+      await this.loadModel({
+        model: entry.id,
+        context_length: entry.max_context_length,
+      });
+    }
   }
 
   private async fetchModels(): Promise<LmStudioV0ModelEntry[] | null> {
@@ -91,16 +91,18 @@ export class LmStudioChatApiClient extends LocalChatApiClient {
     return json.data ?? null;
   }
 
+  private async getModelEntry(): Promise<LmStudioV0ModelEntry | null> {
+    const models = await this.fetchModels();
+    return models?.find((m) => m.id === this.model) ?? null;
+  }
+
   private async loadModel(request: LmStudioLoadModelRequest): Promise<void> {
     const url = `${this.apiBaseUrl}/api/v1/models/load`;
-    const response = await fetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: this.buildHeaders(),
       body: JSON.stringify(request),
     });
-    if (response.ok) {
-      (await response.json()) as LmStudioLoadModelResponse;
-    }
   }
 }
 

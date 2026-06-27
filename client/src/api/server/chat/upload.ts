@@ -38,6 +38,7 @@ function readFileHeader(file: File, bytes: number): Promise<Uint8Array> {
 }
 
 export async function uploadImage(
+  threadId: string,
   file: File,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadResponse> {
@@ -48,7 +49,7 @@ export async function uploadImage(
     const buffer = await file.arrayBuffer();
 
     const response = await axios.post<UploadResponse>(
-      '/api/upload/image',
+      `/api/chat/threads/${threadId}/artifacts`,
       buffer,
       {
         headers: {

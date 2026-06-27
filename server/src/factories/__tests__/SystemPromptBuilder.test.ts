@@ -78,7 +78,7 @@ describe('SystemPromptBuilder', () => {
     expect(text).not.toContain(CODE_EXECUTION_SYSTEM_HINT);
   });
 
-  it('combines knowledge content and code-execution hint in deterministic order', () => {
+  it('combines knowledge and code-execution hint in deterministic order', () => {
     const text = getText(
       builder.build({
         knowledgeContent: 'Pre-loaded notes',

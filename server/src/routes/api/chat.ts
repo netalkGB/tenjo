@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'node:path';
 import { StatusCodes } from 'http-status-codes';
 import { requireCsrfToken } from '../../middleware/csrf';
 import { requireAuth } from '../../middleware/auth';
@@ -12,7 +13,9 @@ import {
   globalSettingService,
   mcpToolService,
   knowledgeService,
-  fileUploadService
+  fileUploadService,
+  imageService,
+  artifactAccessService
 } from '../../services/registry';
 import { systemPromptBuilder } from '../../factories/SystemPromptBuilder';
 import { createImageAnalysisProvider } from '../../services/ImageAnalysisCacheService';
@@ -33,9 +36,9 @@ import {
   ImageAnalysisProcessor,
   bundleTools,
   codeExecutionTool,
-  BrowserResearchAgent,
   createBrowserDelegateTool
 } from 'tenjo-chat-engine';
+import { createBrowserSubAgent } from '../../factories/browserSubAgentFactory';
 import {
   createChatClient,
   createChatApiClient
@@ -43,9 +46,9 @@ import {
 import {
   createSubAgentActivityRelay,
   type SubAgentActivityWriter
-} from '../../services/SubAgentActivityRelay';
-import { toolApprovalEmitter } from '../../services/ToolApprovalEmitter';
-import { generationAbortRegistry } from '../../services/GenerationAbortRegistry';
+} from '../../relays/SubAgentActivityRelay';
+import { toolApprovalEmitter } from '../../events/ToolApprovalEmitter';
+import { generationAbortRegistry } from '../../registries/GenerationAbortRegistry';
 import {
   ThreadService,
   ThreadNotFoundError,
@@ -60,6 +63,10 @@ import {
   type ThreadMessage,
   type BranchStatusInfo
 } from '../../services/MessageService';
+import {
+  ImageNotFoundError,
+  ImageValidationError
+} from '../../services/ImageService';
 import { useSse } from '../../middleware/sse';
 import logger from '../../logger';
 
@@ -96,6 +103,87 @@ const messageService = new MessageService(
   threadRepo,
   toolApprovalRuleRepo,
   fileUploadService
+);
+
+const CHAT_IMAGE_MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+interface UploadChatArtifactRequest {
+  params: { threadId: string };
+}
+
+interface GetChatArtifactRequest {
+  params: { threadId: string; filename: string };
+}
+
+chatRouter.post(
+  '/threads/:threadId/artifacts',
+  requireCsrfToken,
+  requireAuth,
+  express.raw({ type: '*/*', limit: CHAT_IMAGE_MAX_FILE_SIZE }),
+  typedHandler<
+    UploadChatArtifactRequest,
+    { filename: string; url: string } | ErrorResponse
+  >(async (req, res) => {
+    try {
+      const sessionUser = req.user as SessionUser;
+      const { threadId } = req.params;
+      await threadService.verifyThreadOwnership(threadId, sessionUser.id);
+      const fileBuffer = req.body as Buffer;
+      const result = await imageService.uploadImage(fileBuffer);
+      res.json({
+        filename: result.filename,
+        url: `/api/chat/threads/${threadId}/artifacts/${result.filename}`
+      });
+    } catch (err) {
+      if (err instanceof ThreadNotFoundError) {
+        throw new HttpError(StatusCodes.NOT_FOUND, err.message);
+      }
+      if (err instanceof ImageValidationError) {
+        throw new HttpError(StatusCodes.BAD_REQUEST, err.message);
+      }
+      throw err;
+    }
+  })
+);
+
+chatRouter.get(
+  '/threads/:threadId/artifacts/:filename',
+  requireAuth,
+  typedHandler<GetChatArtifactRequest>(async (req, res) => {
+    try {
+      const sessionUser = req.user as SessionUser;
+      const { threadId, filename } = req.params;
+      if (path.basename(filename) !== filename || filename.includes('..')) {
+        throw new HttpError(StatusCodes.BAD_REQUEST, 'Invalid filename');
+      }
+      await threadService.verifyThreadOwnership(threadId, sessionUser.id);
+
+      const canRead = await artifactAccessService.canReadChatArtifact(
+        threadId,
+        filename,
+        sessionUser.id
+      );
+      if (!canRead) {
+        throw new HttpError(StatusCodes.NOT_FOUND, 'File not found');
+      }
+
+      const { data, contentType } = await imageService.getArtifact(filename);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+      res.send(data);
+    } catch (err) {
+      if (err instanceof ThreadNotFoundError) {
+        throw new HttpError(StatusCodes.NOT_FOUND, err.message);
+      }
+      if (err instanceof ImageNotFoundError) {
+        throw new HttpError(StatusCodes.NOT_FOUND, err.message);
+      }
+      if (err instanceof ImageValidationError) {
+        throw new HttpError(StatusCodes.BAD_REQUEST, err.message);
+      }
+      throw err;
+    }
+  })
 );
 
 /**
@@ -183,6 +271,7 @@ interface SendMessageRequest {
     knowledgeIds?: string[];
     executeCodeEnabled?: boolean;
     webSearchEnabled?: boolean;
+    webSearchExtendedTimeoutEnabled?: boolean;
   };
 }
 
@@ -195,6 +284,7 @@ interface BuildLocalToolsResult {
 interface BuildLocalToolsOptions {
   executeCodeEnabled?: boolean;
   webSearchEnabled?: boolean;
+  webSearchExtendedTimeoutEnabled?: boolean;
   modelConfig: ModelConfig;
   /**
    * Called by the web-search sub-agent every time it kicks off / finishes a
@@ -217,19 +307,8 @@ function buildLocalTools(
   if (options.webSearchEnabled) {
     // Each request gets its own private Chromium so concurrent chats do not
     // share cookies / scroll position. Closed in `cleanup`.
-    const subAgent = new BrowserResearchAgent({
-      apiClientFactory: (subTools) =>
-        createChatApiClient(options.modelConfig, subTools),
-      browserConfig: {
-        headless: true,
-        headlessMode: 'new',
-        userAgent: 'Tenjo Browser Agent',
-        requestDelay: { min: 500, max: 3000 }
-      },
-      // Hard 200s wall-clock budget per delegation. Past this the sub-agent
-      // returns whatever it has so far with a "(Note: research timed out
-      // after 200s)" suffix appended to the answer.
-      timeoutMs: 200000
+    const subAgent = createBrowserSubAgent(options.modelConfig, {
+      extendedTimeoutEnabled: options.webSearchExtendedTimeoutEnabled === true
     });
     createSubAgentActivityRelay(subAgent, options.subAgentActivityWriter);
     // Cap the delegate tool to ONE invocation per assistant turn — back-to-back
@@ -318,6 +397,9 @@ chatRouter.post(
       const localToolsResult = buildLocalTools({
         executeCodeEnabled: body.executeCodeEnabled,
         webSearchEnabled: body.webSearchEnabled,
+        webSearchExtendedTimeoutEnabled:
+          body.webSearchEnabled === true &&
+          body.webSearchExtendedTimeoutEnabled === true,
         modelConfig,
         subAgentActivityWriter
       });
@@ -329,9 +411,11 @@ chatRouter.post(
         body.knowledgeIds,
         sessionUser.id
       );
-
       let contextMessages = body.parentMessageId
-        ? await messageService.getContextMessages(body.parentMessageId)
+        ? await messageService.getContextMessages(
+            sessionUser.id,
+            body.parentMessageId
+          )
         : undefined;
 
       if (contextMessages && contextMessages.length > 0) {
@@ -456,6 +540,7 @@ interface EditMessageRequest {
     knowledgeIds?: string[];
     executeCodeEnabled?: boolean;
     webSearchEnabled?: boolean;
+    webSearchExtendedTimeoutEnabled?: boolean;
   };
 }
 
@@ -482,8 +567,10 @@ chatRouter.post(
       await threadService.verifyThreadOwnership(threadId, sessionUser.id);
       await threadService.acquireGeneratingLock(threadId);
 
-      const originalMessage =
-        await messageService.verifyMessageExists(messageId);
+      const originalMessage = await messageService.verifyMessageOwnership(
+        messageId,
+        sessionUser.id
+      );
 
       const modelConfig = await globalSettingService.resolveModelConfig(
         body.modelId
@@ -507,6 +594,9 @@ chatRouter.post(
       const localToolsResult = buildLocalTools({
         executeCodeEnabled: body.executeCodeEnabled,
         webSearchEnabled: body.webSearchEnabled,
+        webSearchExtendedTimeoutEnabled:
+          body.webSearchEnabled === true &&
+          body.webSearchExtendedTimeoutEnabled === true,
         modelConfig,
         subAgentActivityWriter
       });
@@ -518,9 +608,9 @@ chatRouter.post(
         body.knowledgeIds,
         sessionUser.id
       );
-
       let contextMessages = originalMessage.parent_message_id
         ? await messageService.getContextMessages(
+            sessionUser.id,
             originalMessage.parent_message_id
           )
         : undefined;
@@ -817,8 +907,10 @@ chatRouter.post(
         }
 
         await threadService.verifyThreadOwnership(threadId, sessionUser.id);
-        const branchStatuses =
-          await messageService.getBranchStatuses(messageIds);
+        const branchStatuses = await messageService.getBranchStatuses(
+          sessionUser.id,
+          messageIds
+        );
 
         logger.debug('Final branchStatuses:', branchStatuses);
         res.json({ branchStatuses });
@@ -864,6 +956,7 @@ chatRouter.post(
         );
         const { messages } = await messageService.switchBranch(
           threadId,
+          sessionUser.id,
           messageId,
           targetSiblingId
         );
@@ -913,7 +1006,10 @@ chatRouter.get(
         const { threadId, messageId } = req.params;
 
         await threadService.verifyThreadOwnership(threadId, sessionUser.id);
-        const prompt = await messageService.getUserPrompt(messageId);
+        const prompt = await messageService.getUserPrompt(
+          sessionUser.id,
+          messageId
+        );
 
         res.json({ prompt });
       } catch (err) {

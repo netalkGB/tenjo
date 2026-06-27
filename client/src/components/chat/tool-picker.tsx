@@ -30,7 +30,12 @@ function getServerCheckState(
   return 'some';
 }
 
-export function ToolPicker({
+/**
+ * MCP tool checklist with per-server grouping and connection-error banner.
+ * Shared between the chat input popover and the agent options menu
+ * drill-down view.
+ */
+export function ToolPanel({
   availableToolsByServer,
   mcpToolErrors,
   enabledTools,
@@ -49,12 +54,7 @@ export function ToolPicker({
     (sum, [, tools]) => sum + tools.length,
     0
   );
-
-  if (totalCount === 0 && errorEntries.length === 0) return null;
-
-  const enabledCount = enabledTools.size;
-  const allEnabled = enabledCount === totalCount && totalCount > 0;
-  const hasErrors = errorEntries.length > 0;
+  const allEnabled = enabledTools.size === totalCount && totalCount > 0;
 
   const showErrorDialog = () => {
     openDialog({
@@ -68,6 +68,98 @@ export function ToolPicker({
   };
 
   return (
+    <>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium">{t('tools')}</span>
+        {totalCount > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto py-0.5 px-1.5 text-xs cursor-pointer"
+            onClick={allEnabled ? onDisableAll : onEnableAll}
+            data-testid="chat-input-mcp-tools-toggle-all-button"
+          >
+            {allEnabled ? t('tools_deselect_all') : t('tools_select_all')}
+          </Button>
+        )}
+      </div>
+
+      {errorEntries.length > 0 && (
+        <button
+          className="w-full flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 p-2 mb-2 text-left cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors"
+          onClick={showErrorDialog}
+          data-testid="chat-input-mcp-tools-error-banner"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            {t('tools_mcp_connection_errors', {
+              count: String(errorEntries.length)
+            })}
+          </span>
+        </button>
+      )}
+
+      <div className="max-h-60 overflow-y-auto space-y-3">
+        {serverEntries.map(([serverName, tools]) => {
+          const checkState = getServerCheckState(tools, enabledTools);
+          return (
+            <div key={serverName}>
+              <label
+                className="flex items-center gap-2 py-1 px-1 rounded hover:bg-accent cursor-pointer"
+                data-testid="chat-input-mcp-tools-server"
+              >
+                <Checkbox
+                  checked={
+                    checkState === 'all'
+                      ? true
+                      : checkState === 'some'
+                        ? 'indeterminate'
+                        : false
+                  }
+                  onCheckedChange={() => onToggleServer(serverName)}
+                />
+                <span className="text-xs font-medium text-muted-foreground">
+                  {serverName}
+                </span>
+              </label>
+              <div className="space-y-1 ml-4">
+                {tools.map(toolName => (
+                  <label
+                    key={toolName}
+                    className="flex items-center gap-2 py-1 px-1 rounded hover:bg-accent cursor-pointer"
+                    data-testid="chat-input-mcp-tools-tool"
+                  >
+                    <Checkbox
+                      checked={enabledTools.has(toolName)}
+                      onCheckedChange={() => onToggle(toolName)}
+                    />
+                    <span className="text-sm truncate" title={toolName}>
+                      {toolName}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+export function ToolPicker(props: ToolPickerProps) {
+  const { t } = useTranslation();
+  const { availableToolsByServer, mcpToolErrors, enabledTools } = props;
+
+  const totalCount = Object.values(availableToolsByServer).reduce(
+    (sum, tools) => sum + tools.length,
+    0
+  );
+  const hasErrors = Object.keys(mcpToolErrors).length > 0;
+
+  if (totalCount === 0 && !hasErrors) return null;
+
+  return (
     <Popover>
       <PopoverTrigger asChild>
         <Button
@@ -78,7 +170,7 @@ export function ToolPicker({
         >
           <Cable className="w-3.5 h-3.5" />
           <span className="text-xs hidden @sm:inline">
-            {enabledCount}/{totalCount}
+            {enabledTools.size}/{totalCount}
           </span>
           {hasErrors && (
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
@@ -86,80 +178,7 @@ export function ToolPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">{t('tools')}</span>
-          {totalCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-auto py-0.5 px-1.5 text-xs cursor-pointer"
-              onClick={allEnabled ? onDisableAll : onEnableAll}
-              data-testid="chat-input-mcp-tools-toggle-all-button"
-            >
-              {allEnabled ? t('tools_deselect_all') : t('tools_select_all')}
-            </Button>
-          )}
-        </div>
-
-        {hasErrors && (
-          <button
-            className="w-full flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 p-2 mb-2 text-left cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors"
-            onClick={showErrorDialog}
-            data-testid="chat-input-mcp-tools-error-banner"
-          >
-            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {t('tools_mcp_connection_errors', {
-                count: String(errorEntries.length)
-              })}
-            </span>
-          </button>
-        )}
-
-        <div className="max-h-60 overflow-y-auto space-y-3">
-          {serverEntries.map(([serverName, tools]) => {
-            const checkState = getServerCheckState(tools, enabledTools);
-            return (
-              <div key={serverName}>
-                <label
-                  className="flex items-center gap-2 py-1 px-1 rounded hover:bg-accent cursor-pointer"
-                  data-testid="chat-input-mcp-tools-server"
-                >
-                  <Checkbox
-                    checked={
-                      checkState === 'all'
-                        ? true
-                        : checkState === 'some'
-                          ? 'indeterminate'
-                          : false
-                    }
-                    onCheckedChange={() => onToggleServer(serverName)}
-                  />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {serverName}
-                  </span>
-                </label>
-                <div className="space-y-1 ml-4">
-                  {tools.map(toolName => (
-                    <label
-                      key={toolName}
-                      className="flex items-center gap-2 py-1 px-1 rounded hover:bg-accent cursor-pointer"
-                      data-testid="chat-input-mcp-tools-tool"
-                    >
-                      <Checkbox
-                        checked={enabledTools.has(toolName)}
-                        onCheckedChange={() => onToggle(toolName)}
-                      />
-                      <span className="text-sm truncate" title={toolName}>
-                        {toolName}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <ToolPanel {...props} />
       </PopoverContent>
     </Popover>
   );

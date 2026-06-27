@@ -1,20 +1,17 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   type ChatApiClient,
+  type ChatApiImageDetail,
   type ChatApiStatus,
   type ChatApiToolCallStreamEvent,
 } from './ChatApiClient';
+import { ChatApiHttpError, type ChatStreamGuardError } from './ChatApiError';
 import { MessageRole } from './ChatClient';
+import { resolveImageUrls } from './openaiImageMessageUtils';
+import { OpenAIStreamGuard, type StreamGuardOptions } from './StreamGuard';
+
+export type { StreamGuardOptions, StreamProgress } from './StreamGuard';
 
 export type Status = ChatApiStatus;
-
-const SUPPORTED_IMAGE_EXTENSIONS: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-};
 
 export interface ChatCompletionMessageRepsonse {
   role?: string;
@@ -45,7 +42,7 @@ export interface ChatCompletionMessageImageContent {
   type: 'image_url';
   image_url: {
     url: string; // Paths with non-HTTP(S) protocols are base64-encoded for transmission.
-    detail?: 'auto' | 'high' | 'low';
+    detail?: ChatApiImageDetail;
   };
 }
 
@@ -55,6 +52,8 @@ export interface ChatCompletionMessageRequest {
   tool_call_id?: string;
   tool_calls?: ToolCallResponse[];
 }
+
+type ChatCompletionRequestOptions = Record<string, unknown>;
 
 export interface ToolDefinitionRequest {
   type: string;
@@ -81,6 +80,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
   protected model: string;
   protected apiKey: string | null;
   private tools: ToolDefinitionRequest[] = [];
+  private readonly streamGuard: OpenAIStreamGuard | null;
 
   private onMessage: (data: string) => void = () => {};
   private onReasoning: (data: string) => void = () => {};
@@ -93,12 +93,26 @@ export class OpenAIChatApiClient implements ChatApiClient {
     apiKey: string | null;
     model: string;
     tools: ToolDefinitionRequest[];
+    /** Optional watchdog to abort a never-ending stream (reasoning loop). */
+    streamGuard?: StreamGuardOptions;
   }) {
     // apiBaseUrl is stored as-is without including /v1
     this.apiBaseUrl = params.apiBaseUrl.replace(/\/?$/, '');
     this.model = params.model;
     this.apiKey = params.apiKey;
     this.tools = params.tools;
+    this.streamGuard = params.streamGuard
+      ? this.createStreamGuard(params.streamGuard)
+      : null;
+  }
+
+  /**
+   * Replace the advertised tool definitions. Takes effect on the next request —
+   * used by long-lived sessions (the coding agent) to re-apply the user's tool
+   * selection per turn, where chat builds a fresh client per request instead.
+   */
+  setTools(tools: ToolDefinitionRequest[]): void {
+    this.tools = tools;
   }
 
   protected buildHeaders(): Record<string, string> {
@@ -109,52 +123,20 @@ export class OpenAIChatApiClient implements ChatApiClient {
     return headers;
   }
 
-  private convertFilePathToDataUri(filePath: string): string {
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeType = SUPPORTED_IMAGE_EXTENSIONS[ext];
-    if (!mimeType) {
-      throw new Error(`Unsupported image format: ${ext}`);
-    }
-    const fileBuffer = fs.readFileSync(filePath);
-    const base64 = fileBuffer.toString('base64');
-    return `data:${mimeType};base64,${base64}`;
+  protected async getChatCompletionRequestOptions(): Promise<ChatCompletionRequestOptions> {
+    return {};
   }
 
-  private isFilePath(url: string): boolean {
-    return (
-      !url.startsWith('data:') &&
-      !url.startsWith('http://') &&
-      !url.startsWith('https://')
-    );
-  }
-
-  private resolveImageUrls(
-    messages: ChatCompletionMessageRequest[]
-  ): ChatCompletionMessageRequest[] {
-    return messages.map((msg) => {
-      if (!Array.isArray(msg.content)) return msg;
-
-      const resolvedContent = msg.content.map((part) => {
-        if (part.type !== 'image_url' || !this.isFilePath(part.image_url.url)) {
-          return part;
-        }
-        return {
-          ...part,
-          image_url: {
-            ...part.image_url,
-            url: this.convertFilePathToDataUri(part.image_url.url),
-          },
-        };
-      });
-
-      return { ...msg, content: resolvedContent };
-    });
+  protected createStreamGuard(
+    streamGuard: StreamGuardOptions
+  ): OpenAIStreamGuard {
+    return new OpenAIStreamGuard(streamGuard);
   }
 
   public async chatRequest(
     messages: ChatCompletionMessageRequest[]
   ): Promise<Response> {
-    const resolvedMessages = this.resolveImageUrls(messages);
+    const resolvedMessages = resolveImageUrls(messages);
     const apiUrl = this.apiBaseUrl + '/v1/chat/completions';
     const headers = this.buildHeaders();
 
@@ -164,6 +146,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
       stream: false,
       tools: this.tools.length > 0 ? this.tools : undefined,
       tool_choice: this.tools.length > 0 ? 'auto' : undefined,
+      ...(await this.getChatCompletionRequestOptions()),
     };
 
     const response = await fetch(apiUrl, {
@@ -172,7 +155,10 @@ export class OpenAIChatApiClient implements ChatApiClient {
       body: JSON.stringify(requestBody),
     });
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw await ChatApiHttpError.fromResponse(response, {
+        url: apiUrl,
+        method: 'POST',
+      });
     }
     return response;
   }
@@ -197,7 +183,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
     messages: ChatCompletionMessageRequest[],
     signal?: AbortSignal
   ): Promise<Response> {
-    const resolvedMessages = this.resolveImageUrls(messages);
+    const resolvedMessages = resolveImageUrls(messages);
     const apiUrl = this.apiBaseUrl + '/v1/chat/completions';
     const headers = this.buildHeaders();
 
@@ -207,6 +193,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
       stream: true,
       tools: this.tools.length > 0 ? this.tools : undefined,
       tool_choice: this.tools.length > 0 ? 'auto' : undefined,
+      ...(await this.getChatCompletionRequestOptions()),
     };
 
     const response = await fetch(apiUrl, {
@@ -217,7 +204,10 @@ export class OpenAIChatApiClient implements ChatApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw await ChatApiHttpError.fromResponse(response, {
+        url: apiUrl,
+        method: 'POST',
+      });
     }
 
     return response;
@@ -237,6 +227,19 @@ export class OpenAIChatApiClient implements ChatApiClient {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    const startedAt = Date.now();
+    let guardError: ChatStreamGuardError | null = null;
+
+    // Hard read deadline. The stream guard is normally evaluated after a read
+    // resolves, so a stalled connection needs reader cancellation to unblock.
+    const maxDurationMs = this.streamGuard?.getMaxDurationMs() ?? 0;
+    let deadlineHit = false;
+    const deadlineTimer = maxDurationMs
+      ? setTimeout(() => {
+          deadlineHit = true;
+          void reader.cancel().catch(() => {});
+        }, maxDurationMs)
+      : null;
 
     try {
       while (true) {
@@ -246,9 +249,8 @@ export class OpenAIChatApiClient implements ChatApiClient {
         if (value) {
           buffer += decoder.decode(value, { stream: true });
 
-          // Process complete lines
           const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (!line.startsWith('data: ')) continue;
@@ -271,9 +273,23 @@ export class OpenAIChatApiClient implements ChatApiClient {
             }
           }
         }
+
+        guardError =
+          this.streamGuard?.check(message, toolCallsTmp, startedAt) ?? null;
+        if (guardError) break;
       }
     } finally {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
       reader.releaseLock();
+    }
+
+    if (deadlineHit && !guardError) {
+      guardError = this.streamGuard?.createDeadlineError() ?? null;
+    }
+
+    if (guardError) {
+      await response.body?.cancel().catch(() => {});
+      throw guardError;
     }
 
     if (toolCallsTmp.size > 0) {
@@ -293,20 +309,20 @@ export class OpenAIChatApiClient implements ChatApiClient {
     const choice = delta.choices?.[0]?.delta;
     if (!choice) return;
 
-    // Handle role
     if (choice.role) {
       message.role = choice.role;
     }
 
-    // Handle reasoning
-    if (choice.reasoning) {
+    // OpenAI-style servers stream reasoning under `reasoning`, while LM Studio
+    // and DeepSeek-style servers use `reasoning_content`.
+    const reasoningDelta = choice.reasoning ?? choice.reasoning_content;
+    if (reasoningDelta) {
       if (!message.reasoning) message.reasoning = '';
-      message.reasoning += choice.reasoning;
+      message.reasoning += reasoningDelta;
       this.fireStatusChanged('reasoning');
-      this.fireReasoningAdded(choice.reasoning);
+      this.fireReasoningAdded(reasoningDelta);
     }
 
-    // Handle content
     if (choice.content) {
       if (!message.content) message.content = '';
       message.content += choice.content;
@@ -314,7 +330,6 @@ export class OpenAIChatApiClient implements ChatApiClient {
       this.fireMessageAdded(choice.content);
     }
 
-    // Handle tool calls
     if (choice.tool_calls) {
       this.fireStatusChanged('tool_call');
       for (const toolCall of choice.tool_calls) {
@@ -337,8 +352,6 @@ export class OpenAIChatApiClient implements ChatApiClient {
 
         toolCallsTmp.set(toolCall.index, existingToolCall);
 
-        // Buffer arg deltas until id+name are known, then flush each delta as
-        // a stream event so consumers can render args incrementally.
         const hasIdAndName =
           existingToolCall.id !== '' && existingToolCall.function.name !== '';
         if (!hasIdAndName) {
@@ -360,9 +373,6 @@ export class OpenAIChatApiClient implements ChatApiClient {
             argumentsDelta: buffered + newArgsDelta,
           });
         } else if (newArgsDelta) {
-          // Skip empty deltas (e.g. the initial id+name-only chunk) so
-          // consumers don't create a placeholder entry before any source is
-          // available — the first delta with actual content creates it.
           this.onToolCallStream({
             toolCallId: existingToolCall.id,
             toolName: existingToolCall.function.name,
@@ -425,7 +435,10 @@ export class OpenAIChatApiClient implements ChatApiClient {
 
     const response = await fetch(apiUrl, { method: 'GET', headers });
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw await ChatApiHttpError.fromResponse(response, {
+        url: apiUrl,
+        method: 'GET',
+      });
     }
 
     const json = (await response.json()) as { data: ModelInfo[] };

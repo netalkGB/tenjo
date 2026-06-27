@@ -4,38 +4,7 @@ import { login } from '../../helpers/auth';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-
-/** Set the Monaco editor content via its API (reliable under load). */
-async function setMonacoContent(
-  page: import('@playwright/test').Page,
-  text: string
-) {
-  await page.locator('.monaco-editor').waitFor({ state: 'visible' });
-  await page.evaluate((value: string) => {
-    const editor = (
-      window as unknown as {
-        monaco: {
-          editor: { getEditors: () => { setValue: (v: string) => void }[] };
-        };
-      }
-    ).monaco.editor.getEditors()[0];
-    editor.setValue(value);
-  }, text);
-}
-
-/** Read the Monaco editor content via its API. */
-async function getMonacoContent(
-  page: import('@playwright/test').Page
-): Promise<string> {
-  return page.evaluate(() => {
-    const editor = (
-      window as unknown as {
-        monaco: { editor: { getEditors: () => { getValue: () => string }[] } };
-      }
-    ).monaco.editor.getEditors()[0];
-    return editor.getValue();
-  });
-}
+import { getMonacoContent, setMonacoContent } from '../../helpers/monaco';
 
 /** Helper: find a knowledge list item by name and return its id. */
 async function getEntryIdByName(

@@ -1,15 +1,5 @@
 import { Button } from '@/components/ui/button';
-import {
-  ArrowUp,
-  Square,
-  Plus,
-  ImagePlus,
-  X,
-  Loader2,
-  Code2,
-  Globe
-} from 'lucide-react';
-import { useDialog } from '@/hooks/useDialog';
+import { ArrowUp, Square, Plus, ImagePlus, Loader2, Code2 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Select,
@@ -30,30 +20,20 @@ import {
   TooltipContent,
   TooltipTrigger
 } from '@/components/ui/tooltip';
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useSettings } from '@/contexts/settings-context';
-import type { Model } from '@/api/server/settings';
 import { ToolPicker } from './tool-picker';
 import { KnowledgePicker } from './knowledge-picker';
+import { WebSearchToggle } from './web-search-toggle';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  uploadImage,
   validateImageFile,
+  type UploadResponse,
   type UploadProgress
 } from '@/api/server/chat/upload';
-import { formatProviderLabel } from '@/lib/providerLabels';
+import { formatModelLabel } from '@/lib/providerLabels';
 import { generateRandomId } from '@/lib/generateRandomId';
-
-function formatModelLabel(model: Model, allModels: Model[]): string {
-  const base = `${formatProviderLabel(model.type)} / ${model.model}`;
-  const hasDuplicateName = allModels.some(
-    m => m.id !== model.id && m.model === model.model
-  );
-  if (hasDuplicateName) {
-    return `${base} (${model.baseUrl})`;
-  }
-  return base;
-}
+import { AttachmentPreviewList } from '@/components/common/attachment-preview-list';
 
 export interface ImageAttachment {
   id: string;
@@ -66,6 +46,10 @@ export interface ImageAttachment {
 
 interface ChatInputProps {
   onSendMessage: (text: string, imageUrls: string[]) => void;
+  uploadImageFile: (
+    file: File,
+    onProgress?: (progress: UploadProgress) => void
+  ) => Promise<UploadResponse>;
   isStreaming?: boolean;
   isGeneratingLocked?: boolean;
   onStop?: () => void;
@@ -75,6 +59,7 @@ interface ChatInputProps {
 
 export function ChatInput({
   onSendMessage,
+  uploadImageFile,
   isStreaming,
   isGeneratingLocked,
   onStop,
@@ -82,10 +67,10 @@ export function ChatInput({
   onToggleKnowledge
 }: ChatInputProps) {
   const { t } = useTranslation();
-  const { openDialog } = useDialog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState('');
+  const initialized = useRef(false);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -102,29 +87,8 @@ export function ChatInput({
     enableAllTools,
     disableAllTools,
     executeCodeEnabled,
-    toggleExecuteCodeEnabled,
-    webSearchEnabled,
-    toggleWebSearchEnabled
+    toggleExecuteCodeEnabled
   } = useSettings();
-
-  const handleWebSearchClick = () => {
-    if (webSearchEnabled) {
-      // Turning off — no confirmation needed.
-      toggleWebSearchEnabled();
-      return;
-    }
-    openDialog({
-      title: t('web_search_enable_title'),
-      description: t('web_search_warning'),
-      type: 'cancel/ok',
-      okText: t('web_search_enable_confirm'),
-      cancelText: t('web_search_enable_cancel'),
-      showCloseButton: false,
-      onOk: () => {
-        toggleWebSearchEnabled();
-      }
-    });
-  };
 
   const handleInput = () => {
     const textarea = textareaRef.current;
@@ -149,12 +113,17 @@ export function ChatInput({
   const handleSendMessage = () => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    if (!canSend) return;
+    if (!activeModelId || !allUploaded || isGeneratingLocked || isStreaming) {
+      return;
+    }
+
+    const messageText = textarea.value;
+    if (messageText.trim().length === 0 && images.length === 0) return;
 
     const imageUrls = images
       .filter(img => img.uploadedUrl)
       .map(img => img.uploadedUrl!);
-    onSendMessage(text, imageUrls);
+    onSendMessage(messageText, imageUrls);
     textarea.value = '';
     setText('');
     images.forEach(img => URL.revokeObjectURL(img.previewUrl));
@@ -169,62 +138,62 @@ export function ChatInput({
     }
   };
 
-  const processFiles = useCallback(
-    async (files: FileList | File[]) => {
-      const fileArray = Array.from(files);
+  const processFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
 
-      for (const file of fileArray) {
-        const id = generateRandomId();
-        const previewUrl = URL.createObjectURL(file);
+    for (const file of fileArray) {
+      const id = generateRandomId();
+      const previewUrl = URL.createObjectURL(file);
 
-        // Validate magic number before adding
-        try {
-          await validateImageFile(file);
-        } catch {
-          setImages(prev => [
-            ...prev,
-            {
-              id,
-              file,
-              previewUrl,
-              progress: 0,
-              error: t('image_invalid_type')
-            }
-          ]);
-          continue;
-        }
+      // Validate magic number before adding
+      try {
+        await validateImageFile(file);
+      } catch {
+        setImages(prev => [
+          ...prev,
+          {
+            id,
+            file,
+            previewUrl,
+            progress: 0,
+            error: t('image_invalid_type')
+          }
+        ]);
+        continue;
+      }
 
-        // Add image with 0 progress
-        setImages(prev => [...prev, { id, file, previewUrl, progress: 0 }]);
+      // Add image with 0 progress
+      setImages(prev => [...prev, { id, file, previewUrl, progress: 0 }]);
 
-        // Start upload
-        try {
-          const result = await uploadImage(file, (progress: UploadProgress) => {
+      // Start upload
+      try {
+        const result = await uploadImageFile(
+          file,
+          (progress: UploadProgress) => {
             setImages(prev =>
               prev.map(img =>
                 img.id === id ? { ...img, progress: progress.percentage } : img
               )
             );
-          });
+          }
+        );
 
-          setImages(prev =>
-            prev.map(img =>
-              img.id === id
-                ? { ...img, progress: 100, uploadedUrl: result.url }
-                : img
-            )
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : t('image_upload_failed');
-          setImages(prev =>
-            prev.map(img => (img.id === id ? { ...img, error: message } : img))
-          );
-        }
+        setImages(prev =>
+          prev.map(img =>
+            img.id === id
+              ? { ...img, progress: 100, uploadedUrl: result.url }
+              : img
+          )
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : t('image_upload_failed');
+        setImages(prev =>
+          prev.map(img => (img.id === id ? { ...img, error: message } : img))
+        );
       }
-    },
-    [t]
-  );
+    }
+  };
 
   const removeImage = (id: string) => {
     setImages(prev => {
@@ -247,30 +216,27 @@ export function ChatInput({
   };
 
   // Drag & drop handlers
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-  }, []);
+  };
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
 
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        processFiles(e.dataTransfer.files);
-      }
-    },
-    [processFiles]
-  );
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
 
   // Global drag & drop on the window
   useEffect(() => {
@@ -310,11 +276,13 @@ export function ChatInput({
       window.removeEventListener('dragleave', handleWindowDragLeave);
       window.removeEventListener('drop', handleWindowDrop);
     };
-  }, [processFiles]);
+  });
 
   useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
     handleInput();
-  }, []);
+  });
 
   if (!isToolsLoaded) {
     return (
@@ -348,46 +316,19 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Image previews */}
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2">
-          {images.map(img => (
-            <div key={img.id} className="relative group w-16 h-16">
-              <img
-                src={img.previewUrl}
-                alt=""
-                className={`w-16 h-16 object-cover rounded-md border ${
-                  img.error ? 'border-destructive opacity-50' : 'border-border'
-                }`}
-              />
-              {/* Progress bar */}
-              {!img.uploadedUrl && !img.error && (
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted rounded-b-md overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-200"
-                    style={{ width: `${img.progress}%` }}
-                  />
-                </div>
-              )}
-              {/* Error indicator */}
-              {img.error && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-destructive text-xs font-medium bg-background/80 px-1 rounded">
-                    Error
-                  </span>
-                </div>
-              )}
-              {/* Remove button */}
-              <button
-                onClick={() => removeImage(img.id)}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-foreground text-background rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <AttachmentPreviewList
+        items={images.map(img => ({
+          id: img.id,
+          name: img.file.name,
+          size: img.file.size,
+          previewUrl: img.previewUrl,
+          progress: img.progress,
+          isUploaded: !!img.uploadedUrl,
+          error: img.error
+        }))}
+        removeLabel={t('agent_remove_file')}
+        onRemove={removeImage}
+      />
 
       <div>
         <textarea
@@ -452,24 +393,7 @@ export function ChatInput({
           </TooltipTrigger>
           <TooltipContent side="bottom">{t('execute_code')}</TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-9 h-9 @sm:w-auto @sm:h-9 @sm:gap-1.5 cursor-pointer shrink-0 @max-sm:aria-pressed:bg-primary! @max-sm:aria-pressed:text-primary-foreground @max-sm:aria-pressed:border-primary! @max-sm:aria-pressed:hover:bg-primary/90!"
-              onClick={handleWebSearchClick}
-              aria-pressed={webSearchEnabled}
-              aria-label={t('web_search')}
-              data-testid="chat-input-web-search-button"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span className="text-xs hidden @sm:inline">
-                {webSearchEnabled ? t('on') : t('off')}
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t('web_search')}</TooltipContent>
-        </Tooltip>
+        <WebSearchToggle testId="chat-input-web-search-button" />
         <KnowledgePicker
           selectedIds={selectedKnowledge}
           onToggle={onToggleKnowledge}

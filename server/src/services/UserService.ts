@@ -166,6 +166,7 @@ export class UserService {
     disabledMcpTools?: string[];
     executeCodeEnabled?: boolean;
     webSearchEnabled?: boolean;
+    webSearchExtendedTimeoutEnabled?: boolean;
   }> {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new UserNotFoundError();
@@ -175,7 +176,9 @@ export class UserService {
       selectedKnowledgeIds: user.settings?.selectedKnowledgeIds,
       disabledMcpTools: user.settings?.disabledMcpTools,
       executeCodeEnabled: user.settings?.executeCodeEnabled,
-      webSearchEnabled: user.settings?.webSearchEnabled
+      webSearchEnabled: user.settings?.webSearchEnabled,
+      webSearchExtendedTimeoutEnabled:
+        user.settings?.webSearchExtendedTimeoutEnabled
     };
   }
 
@@ -188,6 +191,7 @@ export class UserService {
       disabledMcpTools?: string[];
       executeCodeEnabled?: boolean;
       webSearchEnabled?: boolean;
+      webSearchExtendedTimeoutEnabled?: boolean;
     }
   ): Promise<void> {
     const user = await this.userRepo.findById(userId);
@@ -212,6 +216,10 @@ export class UserService {
     }
     if (preferences.webSearchEnabled !== undefined) {
       merged.webSearchEnabled = preferences.webSearchEnabled;
+    }
+    if (preferences.webSearchExtendedTimeoutEnabled !== undefined) {
+      merged.webSearchExtendedTimeoutEnabled =
+        preferences.webSearchExtendedTimeoutEnabled;
     }
 
     await this.userRepo.update(userId, { settings: merged });

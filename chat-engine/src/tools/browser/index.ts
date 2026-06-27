@@ -118,7 +118,7 @@ export interface BrowserConfig {
   /**
    * Which Chromium headless implementation to use when `headless` is true.
    * - 'new' (default): Chromium's modern headless mode (`--headless=new`).
-   * - 'shell': the legacy `chromium-headless-shell` binary.
+   * - 'shell': the `chromium-headless-shell` binary.
    * Ignored when `headless` is false.
    */
   headlessMode?: HeadlessMode;
@@ -126,7 +126,7 @@ export interface BrowserConfig {
   userAgent?: string;
   /**
    * Random pause inserted between successive navigations issued by the
-   * same controller. Pass `false` to disable. Default: 500–3000 ms.
+   * same controller. Pass `false` to disable. Default: 100–300 ms.
    */
   requestDelay?: RequestDelayConfig | false;
 }
@@ -192,7 +192,7 @@ export class BrowserController {
     this.headless = config.headless ?? false;
     this.headlessMode = config.headlessMode ?? 'new';
     this.userAgent = config.userAgent ?? DEFAULT_USER_AGENT;
-    this.requestDelay = config.requestDelay ?? { min: 500, max: 3000 };
+    this.requestDelay = config.requestDelay ?? { min: 100, max: 300 };
   }
 
   /**
@@ -983,8 +983,7 @@ export function createBrowserDuckDuckGoSearchTool(
       type: 'function',
       function: {
         name: BROWSER_DUCKDUCKGO_SEARCH_TOOL_NAME,
-        description:
-          `Run a DuckDuckGo web search. Pass \`query\` as plain text (e.g. 'OpenAI o1 release date') — the tool navigates to DuckDuckGo's text-only Lite SERP and, in a SINGLE call, collects the first ${SEARCH_PAGES_PER_CALL} results pages (clicking the Next-Page button for you) and returns their results merged. Returns the same shape as browser_navigate (url, title, snapshot, links, blocked): \`snapshot\` concatenates the pages and \`links\` is the merged, de-duplicated result list. Use this instead of manually navigating to the DuckDuckGo top page and typing into the search box. After this call, scan the organic results in the snapshot/links — DO NOT just navigate the first one. Compare each result title against the entities/concepts in your query and pick the MOST RELEVANT one (for ambiguous names or generic terms, the first result is often the wrong entity). Skip ads/sponsored listings. Then browser_navigate / browser_read the chosen result.`,
+        description: `Run a DuckDuckGo web search. Pass \`query\` as plain text (e.g. 'OpenAI o1 release date') — the tool navigates to DuckDuckGo's text-only Lite SERP and, in a SINGLE call, collects the first ${SEARCH_PAGES_PER_CALL} results pages (clicking the Next-Page button for you) and returns their results merged. Returns the same shape as browser_navigate (url, title, snapshot, links, blocked): \`snapshot\` concatenates the pages and \`links\` is the merged, de-duplicated result list. Use this instead of manually navigating to the DuckDuckGo top page and typing into the search box. After this call, scan the organic results in the snapshot/links — DO NOT just navigate the first one. Compare each result title against the entities/concepts in your query and pick the MOST RELEVANT one (for ambiguous names or generic terms, the first result is often the wrong entity). Skip ads/sponsored listings. Then browser_navigate / browser_read the chosen result.`,
         parameters: {
           type: 'object',
           properties: {
@@ -1010,8 +1009,8 @@ export function createBrowserDuckDuckGoSearchTool(
         const response = await page.goto(url, { waitUntil: 'load' });
         const status = response?.status() ?? null;
 
-        // Collect the first SEARCH_PAGES_PER_CALL consecutive SERP pages so a
-        // single call surfaces two pages of results merged together.
+        // Collect consecutive SERP pages so a single call surfaces multiple
+        // pages of results merged together.
         const snapshots: string[] = [];
         const linkBuckets: PageLink[][] = [];
         let snapshotTruncated = false;

@@ -422,9 +422,11 @@ describe('DELETE /api/chat/threads/:threadId', () => {
       0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
     ]);
 
+    const threadId = await createThread(agent);
+
     // Upload an image
     const uploadRes = await agent
-      .post('/api/upload/image')
+      .post(`/api/chat/threads/${threadId}/artifacts`)
       .set('Content-Type', 'application/octet-stream')
       .send(validPng)
       .expect(200);
@@ -438,8 +440,7 @@ describe('DELETE /api/chat/threads/:threadId', () => {
     // Verify file exists
     await expect(fs.access(artifactPath)).resolves.toBeUndefined();
 
-    // Create thread with a message referencing the image
-    const threadId = await createThread(agent);
+    // Create a message referencing the image
     const { messageRepo } = await import('../../repositories/registry');
     await messageRepo.create({
       thread_id: threadId,

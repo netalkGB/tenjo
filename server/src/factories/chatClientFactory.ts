@@ -4,13 +4,21 @@ import {
   LmStudioChatApiClient,
   OllamaChatApiClient,
   type ToolDefinitionRequest,
-  type MessageRequest
+  type MessageRequest,
+  type StreamGuardOptions
 } from 'tenjo-chat-engine';
 import type { ModelConfig } from '../repositories/GlobalSettingRepository';
 
+/**
+ * Build a provider chat client. `streamGuard` is optional and OFF by default so
+ * web chat is unaffected — only the coding agent passes it, to abort a model
+ * that streams reasoning forever without producing output/a tool call (the CLI
+ * agent has always had this watchdog; the GUI agent now matches it).
+ */
 export function createChatApiClient(
   config: ModelConfig,
-  tools: ToolDefinitionRequest[]
+  tools: ToolDefinitionRequest[],
+  streamGuard?: StreamGuardOptions
 ) {
   switch (config.type) {
     case 'lmstudio':
@@ -18,21 +26,25 @@ export function createChatApiClient(
         apiBaseUrl: config.baseUrl,
         apiKey: config.token,
         model: config.model,
-        tools
+        tools,
+        streamGuard
       });
     case 'ollama':
       return new OllamaChatApiClient({
         apiBaseUrl: config.baseUrl,
         apiKey: config.token,
         model: config.model,
-        tools
+        tools,
+        streamGuard
       });
-    default:
+    case 'openai':
+    case 'openai-compatible':
       return new OpenAIChatApiClient({
         apiBaseUrl: config.baseUrl,
         apiKey: config.token,
         model: config.model,
-        tools
+        tools,
+        streamGuard
       });
   }
 }

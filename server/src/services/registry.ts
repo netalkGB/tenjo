@@ -2,7 +2,9 @@ import {
   globalSettingRepo,
   credentialStoreRepo,
   pendingOAuthFlowRepo,
-  knowledgeRepo
+  knowledgeRepo,
+  agentProjectRepo,
+  userRepo
 } from '../repositories/registry';
 import { pool } from '../db/client';
 import { GlobalSettingService } from './GlobalSettingService';
@@ -14,11 +16,19 @@ import { FileUploadService } from './FileUploadService';
 import { ImageService } from './ImageService';
 import { KnowledgeService } from './KnowledgeService';
 import { FileCleanupService } from './FileCleanupService';
+import { AgentProjectService } from './AgentProjectService';
+import { UserService } from './UserService';
+import { ArtifactAccessService } from './ArtifactAccessService';
+import { agentGuiService } from './AgentGuiService';
+import { agentEventBus } from '../events/AgentEventBus';
+import { questionEmitter } from '../events/QuestionEmitter';
+import { toolApprovalEmitter } from '../events/ToolApprovalEmitter';
 
 export const credentialStoreService = new CredentialStoreService(
   credentialStoreRepo
 );
 export const fileUploadService = new FileUploadService();
+export const artifactAccessService = new ArtifactAccessService(pool);
 export const globalSettingService = new GlobalSettingService(
   globalSettingRepo,
   credentialStoreService,
@@ -43,3 +53,7 @@ export const fileCleanupService = new FileCleanupService(
   pool,
   globalSettingRepo
 );
+export const agentProjectService = new AgentProjectService(agentProjectRepo);
+export const userService = new UserService(userRepo);
+
+export { agentGuiService, agentEventBus, questionEmitter, toolApprovalEmitter };

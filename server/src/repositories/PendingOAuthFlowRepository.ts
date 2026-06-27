@@ -4,7 +4,10 @@ export interface PendingOAuthFlowRow {
   state_id: string;
   credential_id: string;
   user_id: string;
+  created_by: string | null;
+  updated_by: string | null;
   created_at: Date | null;
+  updated_at: Date | null;
 }
 
 export class PendingOAuthFlowRepository extends BaseRepository {
@@ -14,14 +17,18 @@ export class PendingOAuthFlowRepository extends BaseRepository {
     userId: string
   ): Promise<void> {
     await this.pool.query(
-      `INSERT INTO "pending_oauth_flows" ("state_id", "credential_id", "user_id") VALUES ($1, $2, $3)`,
+      `INSERT INTO "pending_oauth_flows"
+        ("state_id", "credential_id", "user_id", "created_by", "updated_by")
+        VALUES ($1, $2, $3, $3, $3)`,
       [stateId, credentialId, userId]
     );
   }
 
   async load(stateId: string): Promise<PendingOAuthFlowRow | null> {
     const result = await this.pool.query<PendingOAuthFlowRow>(
-      `SELECT "state_id", "credential_id", "user_id", "created_at" FROM "pending_oauth_flows" WHERE "state_id" = $1`,
+      `SELECT "state_id", "credential_id", "user_id", "created_by", "updated_by", "created_at", "updated_at"
+         FROM "pending_oauth_flows"
+        WHERE "state_id" = $1`,
       [stateId]
     );
     if (result.rows.length === 0) return null;

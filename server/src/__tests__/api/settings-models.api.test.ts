@@ -145,15 +145,15 @@ describe('POST /api/settings/models', () => {
     const res = await adminAgent
       .post('/api/settings/models')
       .send({
-        type: 'openai',
-        baseUrl: 'http://localhost:1234',
+        type: 'openai-compatible',
+        baseUrl: 'https://api.openai-compatible.example',
         model: 'new-model'
       })
       .expect(200);
 
     expect(res.body.model).toMatchObject({
-      type: 'openai',
-      baseUrl: 'http://localhost:1234',
+      type: 'openai-compatible',
+      baseUrl: 'https://api.openai-compatible.example',
       model: 'new-model'
     });
   });
@@ -166,6 +166,17 @@ describe('POST /api/settings/models', () => {
     await adminAgent
       .post('/api/settings/models')
       .send({ type: 'openai' })
+      .expect(400);
+  });
+
+  it('returns 400 for unsupported provider type', async () => {
+    await adminAgent
+      .post('/api/settings/models')
+      .send({
+        type: 'unsupported-provider',
+        baseUrl: 'http://localhost:1234',
+        model: 'test'
+      })
       .expect(400);
   });
 

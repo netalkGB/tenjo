@@ -5,8 +5,8 @@ import { logoutRouter } from './logout';
 import { whoamiRouter } from './whoami';
 import { chatRouter } from './chat';
 import { settingsRouter } from './settings';
-import { uploadRouter } from './upload';
 import { knowledgeRouter } from './knowledge';
+import { agentRouter } from './agent';
 
 export const apiRouter = express.Router();
 apiRouter.use('/login', loginRouter);
@@ -15,5 +15,5 @@ apiRouter.use('/logout', logoutRouter);
 apiRouter.use('/whoami', whoamiRouter);
 apiRouter.use('/chat', chatRouter);
 apiRouter.use('/settings', settingsRouter);
-apiRouter.use('/upload', uploadRouter);
 apiRouter.use('/knowledge', knowledgeRouter);
+apiRouter.use('/agent', agentRouter);

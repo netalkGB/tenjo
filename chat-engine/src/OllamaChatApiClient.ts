@@ -9,21 +9,7 @@ interface OllamaPsResponse {
 interface OllamaPsEntry {
   name: string;
   model: string;
-  size: number;
-  digest: string;
-  details: OllamaPsDetails;
-  expires_at: string;
-  size_vram: number;
   context_length: number;
-}
-
-interface OllamaPsDetails {
-  parent_model: string;
-  format: string;
-  family: string;
-  families: string[];
-  parameter_size: string;
-  quantization_level: string;
 }
 
 // --- Ollama API types (POST /api/show) ---
@@ -60,26 +46,16 @@ interface OllamaModelInfoMap {
 
 interface OllamaGenerateRequest {
   model: string;
-  prompt?: string;
-  stream?: boolean;
-  options?: OllamaModelOptions;
-  keep_alive?: string | number;
+  stream: false;
+  options: {
+    num_ctx: number;
+  };
 }
-
-interface OllamaModelOptions {
-  num_ctx?: number;
-  temperature?: number;
-  top_k?: number;
-  top_p?: number;
-  min_p?: number;
-  seed?: number;
-  num_predict?: number;
-  stop?: string | string[];
-}
-
-// ---
 
 export class OllamaChatApiClient extends LocalChatApiClient {
+  private modelLoaded = false;
+  private modelLoadPromise: Promise<void> | null = null;
+
   /**
    * Fetch the max context length from Ollama's /api/show endpoint.
    */
@@ -87,7 +63,7 @@ export class OllamaChatApiClient extends LocalChatApiClient {
     const url = `${this.apiBaseUrl}/api/show`;
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.buildHeaders(),
       body: JSON.stringify({ model: this.model }),
     });
     if (!response.ok) return null;
@@ -104,50 +80,69 @@ export class OllamaChatApiClient extends LocalChatApiClient {
     return null;
   }
 
-  /**
-   * Ensure the model is loaded with max context length.
-   * Pre-loads via POST /api/generate so that subsequent requests
-   * through /v1/chat/completions use the already-loaded model
-   * with the correct context size.
-   */
-  protected override async loadModelIfNeeded(): Promise<void> {
-    const maxContext = await this.getMaxContextLength();
-    if (!maxContext || maxContext <= 0) return;
+  protected override async getChatCompletionRequestOptions(): Promise<
+    Record<string, unknown>
+  > {
+    await this.ensureModelLoaded();
+    return {};
+  }
+
+  private async ensureModelLoaded(): Promise<void> {
+    if (this.modelLoaded) return;
+    if (this.modelLoadPromise) {
+      await this.modelLoadPromise;
+      return;
+    }
+
+    const load = this.loadModelIfNeeded().then(() => {
+      this.modelLoaded = true;
+    });
+    this.modelLoadPromise = load;
+    try {
+      await load;
+    } finally {
+      if (this.modelLoadPromise === load) {
+        this.modelLoadPromise = null;
+      }
+    }
+  }
+
+  private async loadModelIfNeeded(): Promise<void> {
+    const contextLength = await this.getMaxContextLength();
+    if (!contextLength || contextLength <= 0) return;
 
     const running = await this.findRunningModel();
-    if (running && running.context_length >= maxContext) return;
-
-    // Not running, or running below max — (re)load with max context
-    await this.loadWithContext(maxContext);
+    if (!running || running.context_length < contextLength) {
+      await this.loadWithContext(contextLength);
+    }
   }
 
   private async findRunningModel(): Promise<OllamaPsEntry | null> {
     const url = `${this.apiBaseUrl}/api/ps`;
-    const response = await fetch(url, { method: 'GET' });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.buildHeaders(),
+    });
     if (!response.ok) return null;
 
     const json = (await response.json()) as OllamaPsResponse;
     return (
       json.models.find(
-        (m) => m.name === this.model || m.model === this.model
+        (entry) => entry.name === this.model || entry.model === this.model
       ) ?? null
     );
   }
 
-  /**
-   * Load the model with the specified context length.
-   * Uses POST /api/generate with model + options only (no prompt).
-   */
-  private async loadWithContext(numCtx: number): Promise<void> {
+  private async loadWithContext(contextLength: number): Promise<void> {
     const url = `${this.apiBaseUrl}/api/generate`;
     const request: OllamaGenerateRequest = {
       model: this.model,
       stream: false,
-      options: { num_ctx: numCtx },
+      options: { num_ctx: contextLength },
     };
     await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.buildHeaders(),
       body: JSON.stringify(request),
     });
   }

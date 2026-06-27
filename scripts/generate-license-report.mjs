@@ -19,6 +19,14 @@ const MANUAL_LICENSE_TEXTS_PATH = path.join(
   __dirname,
   "manual-license-texts.json",
 );
+const NOVNC_PACKAGE_NAME = "@novnc/novnc";
+const NOVNC_ADDITIONAL_LICENSE_FILES = [
+  "docs/LICENSE.MPL-2.0",
+  "docs/LICENSE.OFL-1.1",
+  "docs/LICENSE.BSD-3-Clause",
+  "docs/LICENSE.BSD-2-Clause",
+  "vendor/pako/LICENSE",
+];
 
 /**
  * Load a JSON config file. Returns the default value if not found.
@@ -42,6 +50,55 @@ function buildManualLicenseMap(entries) {
     map.set(entry.package, entry.text);
   }
   return map;
+}
+
+async function readAdditionalLicenseTexts(key, pkgPath, additionalLicenseFiles) {
+  const relativePaths = getAdditionalLicenseFiles(key, additionalLicenseFiles);
+  if (!pkgPath || relativePaths.length === 0) return "";
+
+  let text = "";
+  for (const relativePath of relativePaths) {
+    const normalizedPath = path.normalize(relativePath);
+    if (path.isAbsolute(normalizedPath) || normalizedPath.startsWith("..")) {
+      throw new Error(
+        `Invalid additional license file path for ${key}: ${relativePath}`,
+      );
+    }
+
+    const filePath = path.join(pkgPath, normalizedPath);
+    const data = await fs.readFile(filePath, "utf8");
+    text += `\n\nAdditional License File: ${relativePath}\n${data}\n`;
+  }
+
+  return text;
+}
+
+function getAdditionalLicenseFiles(key, additionalLicenseFiles) {
+  const packageName = getPackageNameFromKey(key);
+  if (packageName === NOVNC_PACKAGE_NAME) {
+    return NOVNC_ADDITIONAL_LICENSE_FILES;
+  }
+
+  return additionalLicenseFiles[key] ?? [];
+}
+
+function getPackageNameFromKey(key) {
+  const atIndex = key.lastIndexOf("@");
+  return atIndex > 0 ? key.substring(0, atIndex) : key;
+}
+
+async function appendAdditionalLicenseTexts(
+  key,
+  pkgPath,
+  baseText,
+  additionalLicenseFiles,
+) {
+  const additionalText = await readAdditionalLicenseTexts(
+    key,
+    pkgPath,
+    additionalLicenseFiles,
+  );
+  return `${baseText}${additionalText}`;
 }
 
 /**
@@ -172,7 +229,7 @@ function getProductionDepKeys(workspace) {
  *   2. GitHub API (auto-fetch from repository URL)
  *   3. manual-license-texts.json
  */
-async function resolveLicenseText(key, pkg, manualTexts) {
+async function resolveLicenseText(key, pkg, manualTexts, additionalLicenseFiles) {
   const { licenses, licenseFile } = pkg;
   const pkgPath = pkg.path;
   const isDualLicensed = licenses && licenses.includes(" OR ");
@@ -188,7 +245,12 @@ async function resolveLicenseText(key, pkg, manualTexts) {
           const data = await fs.readFile(path.join(pkgPath, lf), "utf8");
           text += `${data}\n`;
         }
-        return text;
+        return appendAdditionalLicenseTexts(
+          key,
+          pkgPath,
+          text,
+          additionalLicenseFiles,
+        );
       }
     } catch {
       // fall through to other methods
@@ -197,7 +259,13 @@ async function resolveLicenseText(key, pkg, manualTexts) {
     const fileName = path.basename(licenseFile);
     if (/LICENSE|LICENCE|COPYING/i.test(fileName)) {
       try {
-        return await fs.readFile(licenseFile, "utf8");
+        const text = await fs.readFile(licenseFile, "utf8");
+        return appendAdditionalLicenseTexts(
+          key,
+          pkgPath,
+          text,
+          additionalLicenseFiles,
+        );
       } catch {
         // fall through
       }
@@ -210,7 +278,14 @@ async function resolveLicenseText(key, pkg, manualTexts) {
     try {
       console.log(`  Fetching license for ${key} from GitHub API...`);
       const text = await fetchLicenseFromGitHub(repoUrl);
-      if (text) return text;
+      if (text) {
+        return appendAdditionalLicenseTexts(
+          key,
+          pkgPath,
+          text,
+          additionalLicenseFiles,
+        );
+      }
     } catch (err) {
       if (err.message.includes("rate limit")) {
         console.error(`  ${err.message} — skipping GitHub API fallback for remaining packages`);
@@ -224,10 +299,20 @@ async function resolveLicenseText(key, pkg, manualTexts) {
 
   // 3. Try manual license text from manual-license-texts.json
   if (manualTexts.has(key)) {
-    return manualTexts.get(key);
+    return appendAdditionalLicenseTexts(
+      key,
+      pkgPath,
+      manualTexts.get(key),
+      additionalLicenseFiles,
+    );
   }
 
-  return null;
+  const additionalText = await readAdditionalLicenseTexts(
+    key,
+    pkgPath,
+    additionalLicenseFiles,
+  );
+  return additionalText || null;
 }
 
 async function main() {
@@ -235,6 +320,7 @@ async function main() {
   const dualLicenseSelect = await loadJsonConfig(DUAL_LICENSE_PATH);
   const manualLicenseEntries = await loadJsonConfig(MANUAL_LICENSE_TEXTS_PATH, []);
   const manualLicenseTexts = buildManualLicenseMap(manualLicenseEntries);
+  const additionalLicenseFiles = {};
 
   // Step 1: Collect production dependency keys from all workspaces
   const prodDepKeys = new Set();
@@ -308,6 +394,7 @@ async function main() {
       key,
       pkg,
       manualLicenseTexts,
+      additionalLicenseFiles,
     );
     if (licenseText) {
       report += `License Text:\n${licenseText}\n`;

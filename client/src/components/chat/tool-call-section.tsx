@@ -7,7 +7,7 @@ import {
   ShieldQuestion
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Button } from '@/components/ui/button';
+import { ToolApprovalActions } from './tool-approval-actions';
 import { CodeExecutionToolCall } from './code-execution-tool-call';
 import { WebSearchToolCall } from './web-search-tool-call';
 import type { SubAgentActivityInfo } from './sub-agent-activity';
@@ -145,31 +145,11 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallInfo }) {
             </div>
           ) : null}
           {toolCall.status === 'pendingApproval' && (
-            <div className="mt-2 flex gap-2">
-              <Button
-                size="sm"
-                onClick={toolCall.onApprove}
-                data-testid="tool-call-approve-button"
-              >
-                {t('tool_approve')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={toolCall.onReject}
-                data-testid="tool-call-reject-button"
-              >
-                {t('tool_reject')}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={toolCall.onAutoApprove}
-                data-testid="tool-call-auto-approve-button"
-              >
-                {t('tool_auto_approve')}
-              </Button>
-            </div>
+            <ToolApprovalActions
+              onApprove={toolCall.onApprove}
+              onReject={toolCall.onReject}
+              onAutoApprove={toolCall.onAutoApprove}
+            />
           )}
           {toolCall.result !== undefined && (
             <div>

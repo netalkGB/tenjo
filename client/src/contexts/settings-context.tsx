@@ -48,7 +48,11 @@ interface SettingsContextValue {
   executeCodeEnabled: boolean;
   toggleExecuteCodeEnabled: () => void;
   webSearchEnabled: boolean;
-  toggleWebSearchEnabled: () => void;
+  webSearchExtendedTimeoutEnabled: boolean;
+  setWebSearchEnabledOptions: (options: {
+    enabled: boolean;
+    extendedTimeoutEnabled?: boolean;
+  }) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -77,6 +81,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [executeCodeEnabled, setExecuteCodeEnabled] = useState(false);
   const executeCodeUserOverridden = useRef(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchExtendedTimeoutEnabled, setWebSearchExtendedTimeoutEnabled] =
+    useState(false);
   const webSearchUserOverridden = useRef(false);
 
   const reloadModels = async () => {
@@ -157,6 +163,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           typeof prefs.webSearchEnabled === 'boolean'
         ) {
           setWebSearchEnabled(prefs.webSearchEnabled);
+        }
+        if (
+          !webSearchUserOverridden.current &&
+          typeof prefs.webSearchExtendedTimeoutEnabled === 'boolean'
+        ) {
+          setWebSearchExtendedTimeoutEnabled(
+            prefs.webSearchExtendedTimeoutEnabled
+          );
         }
       } catch {
         // Preferences are non-critical; fall back to OS/browser defaults
@@ -367,18 +381,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const toggleWebSearchEnabled = () => {
+  const setWebSearchEnabledOptions = (options: {
+    enabled: boolean;
+    extendedTimeoutEnabled?: boolean;
+  }) => {
     webSearchUserOverridden.current = true;
-    setWebSearchEnabled(prev => {
-      const next = !prev;
-      updatePreferences({ webSearchEnabled: next }).catch(() => {
-        openDialog({
-          title: t('error'),
-          description: t('error_save_preferences'),
-          type: 'ok'
-        });
+    const nextExtended = options.enabled
+      ? (options.extendedTimeoutEnabled ?? webSearchExtendedTimeoutEnabled)
+      : false;
+    setWebSearchEnabled(options.enabled);
+    setWebSearchExtendedTimeoutEnabled(nextExtended);
+    updatePreferences({
+      webSearchEnabled: options.enabled,
+      webSearchExtendedTimeoutEnabled: nextExtended
+    }).catch(() => {
+      openDialog({
+        title: t('error'),
+        description: t('error_save_preferences'),
+        type: 'ok'
       });
-      return next;
     });
   };
 
@@ -435,7 +456,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         executeCodeEnabled,
         toggleExecuteCodeEnabled,
         webSearchEnabled,
-        toggleWebSearchEnabled
+        webSearchExtendedTimeoutEnabled,
+        setWebSearchEnabledOptions
       }}
     >
       {children}

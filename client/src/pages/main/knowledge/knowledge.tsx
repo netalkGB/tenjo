@@ -35,15 +35,6 @@ type ViewMode =
   | { type: 'list' }
   | { type: 'edit'; entry?: KnowledgeEntry; name: string; content: string };
 
-function formatDate(date: Date | null): string {
-  if (!date) return '';
-  return date.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
-}
-
 export function Knowledge() {
   const { t } = useTranslation();
   const { openDialog, closeDialog } = useDialog();
@@ -458,11 +449,6 @@ export function Knowledge() {
                     >
                       {entry.name}
                     </p>
-                    {entry.updated_at && (
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(entry.updated_at)}
-                      </p>
-                    )}
                   </div>
                   <div className="flex items-center gap-1 ml-2">
                     <Tooltip>

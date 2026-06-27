@@ -152,4 +152,48 @@ describe('GlobalSettingRepository (Integration Tests)', () => {
       expect((result as Record<string, unknown>).cleaning).toBeUndefined();
     });
   });
+
+  describe('updateSettingSection', () => {
+    it('should update one top-level section without overwriting the others', async () => {
+      const initialSettings: GlobalSettings = {
+        model: { activeId: 'model-1', models: [] },
+        mcpServers: {
+          fs: { type: 'stdio', command: 'npx', args: ['server'] }
+        }
+      };
+      await globalSettingRepository.updateSettings(initialSettings, testUserId);
+
+      await globalSettingRepository.updateSettingSection(
+        'model',
+        {
+          activeId: 'model-2',
+          models: [
+            {
+              id: 'model-2',
+              type: 'lmstudio',
+              baseUrl: 'http://localhost:1234/',
+              model: 'new-model'
+            }
+          ]
+        },
+        testUserId2
+      );
+
+      const result = await globalSettingRepository.getSettings();
+      expect(result).toEqual({
+        ...initialSettings,
+        model: {
+          activeId: 'model-2',
+          models: [
+            {
+              id: 'model-2',
+              type: 'lmstudio',
+              baseUrl: 'http://localhost:1234/',
+              model: 'new-model'
+            }
+          ]
+        }
+      });
+    });
+  });
 });

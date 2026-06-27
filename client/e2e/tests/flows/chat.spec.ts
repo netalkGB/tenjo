@@ -14,6 +14,14 @@ const __dirname = path.dirname(__filename);
 
 const THINKING_MODEL_NAME = 'openai/gpt-oss-20b';
 
+function selectedModelMatches(
+  selectedText: string | null,
+  modelName: string
+): boolean {
+  const normalized = selectedText?.replace(/\s+/g, ' ').trim();
+  return normalized === modelName || normalized?.endsWith(` / ${modelName}`);
+}
+
 /** Select the model in chat input if not already selected. */
 async function ensureModelSelected(
   page: import('@playwright/test').Page,
@@ -23,7 +31,7 @@ async function ensureModelSelected(
   await expect(modelSelect).toBeVisible({ timeout: 10000 });
 
   const selectText = await modelSelect.textContent();
-  if (selectText && selectText.includes(modelName)) return;
+  if (selectedModelMatches(selectText, modelName)) return;
 
   await modelSelect.click();
   const option = page.getByRole('option', {
@@ -56,6 +64,7 @@ async function sendMessage(
   });
 
   // Verify the assistant returned a non-empty response
+  await scrollToBottom(page);
   const assistantMsg = page.getByTestId('assistant-message-content').last();
   await expect(assistantMsg).toBeVisible({ timeout: 10000 });
   await expect(assistantMsg).not.toBeEmpty();
@@ -137,6 +146,12 @@ test.describe
 
       // Wait for completion
       await expect(page.getByTestId('chat-input-send-button')).toBeVisible({
+        timeout: 120_000
+      });
+
+      // `done` releases the input before the title event arrives; wait for the
+      // separate title-generation phase to settle before asserting the header.
+      await expect(page.getByTestId('chat-status-generatingTitle')).toBeHidden({
         timeout: 120_000
       });
 
@@ -699,11 +714,11 @@ test.describe
       await expect(page.locator('.group img[src^="blob:"]')).toBeVisible({
         timeout: 15000
       });
+      await ensureModelSelected(page);
       await expect(page.getByTestId('chat-input-send-button')).toBeEnabled({
         timeout: 15000
       });
 
-      await ensureModelSelected(page);
       await page
         .getByTestId('chat-input-textarea')
         .fill('What is in this image? Reply briefly.');

@@ -53,14 +53,13 @@ describe('ImageService', () => {
   });
 
   describe('uploadImage', () => {
-    it('should upload a JPEG file and return filename with url', async () => {
+    it('should upload a JPEG file and return filename', async () => {
       const jpegBuffer = buildBuffer([0xff, 0xd8, 0xff]);
 
       const result = await service.uploadImage(jpegBuffer);
 
       expect(result).toEqual({
-        filename: 'test-uuid-1234.jpg',
-        url: '/api/upload/artifacts/test-uuid-1234.jpg'
+        filename: 'test-uuid-1234.jpg'
       });
       expect(mockFileUploadService.save).toHaveBeenCalledWith(
         'test-uuid-1234.jpg',
@@ -68,14 +67,13 @@ describe('ImageService', () => {
       );
     });
 
-    it('should upload a PNG file and return filename with url', async () => {
+    it('should upload a PNG file and return filename', async () => {
       const pngBuffer = buildBuffer([0x89, 0x50, 0x4e, 0x47]);
 
       const result = await service.uploadImage(pngBuffer);
 
       expect(result).toEqual({
-        filename: 'test-uuid-1234.png',
-        url: '/api/upload/artifacts/test-uuid-1234.png'
+        filename: 'test-uuid-1234.png'
       });
       expect(mockFileUploadService.save).toHaveBeenCalledWith(
         'test-uuid-1234.png',

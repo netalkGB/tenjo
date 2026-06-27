@@ -1,7 +1,7 @@
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { ServiceError } from '../errors/ServiceError';
 import logger from '../logger';
+import { generateUuidV4 } from '../utils/generateUuidV4';
 import type {
   KnowledgeRepository,
   Knowledge,
@@ -99,6 +99,26 @@ export class KnowledgeService {
     );
   }
 
+  /**
+   * Copy knowledge entries into transient upload artifacts (`{ ref, name }`)
+   * so they can ride the agent's context-file pipeline. The pipeline DELETES
+   * the artifact after writing the sandbox copy, so the knowledge's own
+   * backing file must never be handed over directly — always a copy.
+   */
+  async copyToArtifacts(
+    ids: string[],
+    userId: string
+  ): Promise<Array<{ ref: string; name: string }>> {
+    const entries = await this.getContentsByIds(ids, userId);
+    return Promise.all(
+      entries.map(async (entry) => {
+        const ref = `${generateUuidV4()}.txt`;
+        await this.fileUploadService.save(ref, entry.content, 'utf-8');
+        return { ref, name: entry.name };
+      })
+    );
+  }
+
   async create(
     userId: string,
     name: string,
@@ -119,7 +139,7 @@ export class KnowledgeService {
       );
     }
 
-    const filename = `${crypto.randomUUID()}.txt`;
+    const filename = `${generateUuidV4()}.txt`;
     const fsPath = await this.fileUploadService.save(
       filename,
       content,
@@ -154,7 +174,7 @@ export class KnowledgeService {
       );
     }
 
-    const filename = `${crypto.randomUUID()}.txt`;
+    const filename = `${generateUuidV4()}.txt`;
     const fsPath = await this.fileUploadService.save(filename, fileBuffer);
 
     return this.knowledgeRepo.create({

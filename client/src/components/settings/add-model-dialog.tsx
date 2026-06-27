@@ -33,6 +33,7 @@ import {
   CommandList
 } from '@/components/ui/command';
 import { getAvailableModels } from '@/api/server/settings/models';
+import { MODEL_PROVIDER_OPTIONS } from '@/lib/providerLabels';
 import type { AvailableModel, Model } from '@/api/server/settings/schemas';
 
 const DEBOUNCE_MS = 1000;
@@ -145,6 +146,16 @@ export function AddModelDialog({
     scheduleFetch(form.baseUrl, value);
   };
 
+  const getBaseUrlPlaceholder = () => {
+    if (form.type === 'ollama') {
+      return t('settings_base_url_placeholder_ollama');
+    }
+    if (form.type === 'openai-compatible') {
+      return t('settings_base_url_placeholder_openai_compatible');
+    }
+    return t('settings_base_url_placeholder_lmstudio');
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && handleClose()}>
       <DialogContent className="sm:max-w-md">
@@ -164,19 +175,18 @@ export function AddModelDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="lmstudio">LM Studio</SelectItem>
-                <SelectItem value="ollama">Ollama</SelectItem>
+                {MODEL_PROVIDER_OPTIONS.map(provider => (
+                  <SelectItem key={provider.value} value={provider.value}>
+                    {provider.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
             <Label>{t('settings_base_url')}</Label>
             <Input
-              placeholder={
-                form.type === 'ollama'
-                  ? 'http://localhost:11434'
-                  : 'http://localhost:1234/'
-              }
+              placeholder={getBaseUrlPlaceholder()}
               value={form.baseUrl}
               onChange={e => handleBaseUrlChange(e.target.value)}
               data-testid="settings-model-add-base-url-input"

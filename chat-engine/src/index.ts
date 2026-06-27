@@ -7,16 +7,73 @@ export {
   type MessageTextContent,
   type MessageImageContent,
 } from './ChatClient';
+export {
+  ChatAgent,
+  CHAT_AGENT_EMPTY_RESPONSE_NUDGE,
+  type ChatAgentOptions,
+  type DrainStrategy,
+  type QueuedItem,
+  type QueuedItemStatus,
+  type AgentToolCall,
+  type ToolExecutionDecision,
+  type ExecuteToolFn,
+  type TextOnlyNudgeContext,
+  type TextOnlyNudgeInstruction,
+  type TurnResult,
+  type ChatAgentSnapshot,
+  type QueueChangedHandler,
+  type TurnStartHandler,
+  type TurnCompleteHandler,
+  type IdleHandler,
+  type AgentErrorHandler,
+} from './ChatAgent';
+export {
+  AgentError,
+  AgentTurnAbortedError,
+  AgentUnknownError,
+} from './AgentError';
 export { type ChatApiClient } from './ChatApiClient';
+export {
+  ChatApiError,
+  ChatApiHttpError,
+  ChatApiValidationError,
+  ChatStreamGuardError,
+} from './ChatApiError';
+export {
+  estimateTextTokens,
+  estimateMessageTokens,
+  estimateMessagesTokens,
+  getContextUsage,
+  compactMessages,
+  stripThinkingFromMessages,
+  summarizeOldMessages,
+  applySummaryToMessages,
+  summarizeIncremental,
+  type ContextUsage,
+  type CompactionOptions,
+  type CompactionResult,
+  type CompactionState,
+  type SummarizeInput,
+  type SummarizeOldMessagesOptions,
+  type SummarizeOldMessagesResult,
+  type SummarizeIncrementalOptions,
+  type SummarizeIncrementalResult,
+} from './ContextManager';
 export {
   OpenAIChatApiClient,
   type ToolDefinitionRequest,
   type ModelInfo,
+  type StreamGuardOptions,
 } from './OpenAIChatApiClient';
 export { LocalChatApiClient } from './LocalChatApiClient';
 export { LmStudioChatApiClient } from './LmStudioChatApiClient';
 export { OllamaChatApiClient } from './OllamaChatApiClient';
 export { McpClientManager } from './McpClientManager';
+export {
+  McpError,
+  McpToolNotFoundError,
+  McpUnsupportedTransportError,
+} from './McpError';
 export { ImageAnalysisProcessor } from './ImageAnalysisProcessor';
 export {
   type ImageAnalysisProvider,
@@ -32,7 +89,6 @@ export {
   type OAuthHttpMcpServerConfig,
   type McpServerConfig,
   type McpServersConfig,
-  normalizeMcpServerConfig,
   createHttpTransportWithFallback,
   createTransport,
 } from './mcpTransportFactory';
@@ -42,6 +98,7 @@ export {
   type BundledTools,
   bundleTools,
 } from './tools/types';
+export { DuplicateToolNameError, ToolError } from './tools/errors';
 export {
   executeCode,
   type CodeExecutionResult,
@@ -49,6 +106,92 @@ export {
   CODE_EXECUTION_SYSTEM_HINT,
   codeExecutionTool,
 } from './tools/code-execution';
+export {
+  type Sandbox,
+  type ExecResult,
+  type ExecOptions,
+  type ReadFileResult,
+  type DirEntry,
+  type FileStat,
+  type FileSnapshot,
+  type FileChange,
+  type SnapshotOptions,
+  type WatchOptions,
+  type SandboxWatcher,
+  DEFAULT_SNAPSHOT_EXCLUDE,
+} from './sandbox/Sandbox';
+export { jailRelative, PathJailError } from './sandbox/pathJail';
+export { diffSnapshots } from './sandbox/diffSnapshots';
+export { LocalSandbox } from './sandbox/LocalSandbox';
+export {
+  DockerSandbox,
+  type DockerSandboxOptions,
+} from './sandbox/DockerSandbox';
+export {
+  SandboxManager,
+  type SandboxManagerOptions,
+  type SandboxPrewarmPhase,
+  type SandboxGuiStatus,
+} from './sandbox/SandboxManager';
+export {
+  DockerUnavailableError,
+  SandboxCommandError,
+  SandboxConfigurationError,
+  SandboxError,
+  SandboxFileOperationError,
+  SandboxGuiError,
+  SandboxResourceExhaustedError,
+  SandboxSetupError,
+  type SandboxFileOperation,
+} from './sandbox/errors';
+export {
+  runDocker,
+  ok,
+  type DockerResult,
+  type DockerOptions,
+} from './sandbox/dockerCli';
+export {
+  createCodingTools,
+  CODING_TOOL_NAMES,
+  CODING_AGENT_SYSTEM_HINT,
+  CODING_AGENT_SYSTEM_PROMPT,
+  CODING_AGENT_COMPACT_SYSTEM_PROMPT,
+  CODING_AGENT_ACT_NUDGE,
+  ASK_USER_QUESTION_TOOL_NAME,
+  ASK_USER_QUESTION_TOOL_DEFINITION,
+  ASK_USER_QUESTION_SYSTEM_HINT,
+  ASK_USER_QUESTION_COMPACT_HINT,
+  parseAskUserQuestionArgs,
+  createPlanController,
+  displayTask,
+  PLAN_MODE_PRESENT_PLAN_NUDGE,
+  buildDevServerHint,
+  buildHostPrivatePreviewHint,
+  buildCompactDevServerHint,
+  buildCompactHostPrivatePreviewHint,
+  SANDBOX_COMMON_TOOLCHAIN_HINT,
+  SANDBOX_COMPACT_COMMON_TOOLCHAIN_HINT,
+  SANDBOX_COMPACT_DOCUMENT_TOOLCHAIN_HINT,
+  SANDBOX_COMPACT_WORKSPACE_HINT,
+  SANDBOX_DOCUMENT_TOOLCHAIN_HINT,
+  SANDBOX_TOOLCHAIN_HINT,
+  SANDBOX_WORKSPACE_HINT,
+  DEFAULT_WORKSPACE_INTENT_LEXICON,
+  classifyIntent,
+  createSandboxDocumentWorkspace,
+  type AskUserQuestionArgs,
+  type AskUserQuestionOption,
+  type ClassifyIntentOptions,
+  type DeliverableType,
+  type PlanController,
+  type PlanPhase,
+  type PlanEvents,
+  type PlanTodoView,
+  type HostPrivatePreviewHintKind,
+  type SandboxDocumentWorkspace,
+  type Intent,
+  type WorkspaceIntentLexicon,
+} from './coding-agent';
 export {
   BrowserController,
   DEFAULT_USER_AGENT,
@@ -94,6 +237,7 @@ export {
 } from './agents/browserResearchAgent';
 export {
   BROWSER_DELEGATE_TOOL_NAME,
+  BROWSER_DELEGATE_TOOL_DEFINITION,
   BROWSER_DELEGATE_SYSTEM_HINT,
   createBrowserDelegateTool,
 } from './agents/subAgentDelegate';

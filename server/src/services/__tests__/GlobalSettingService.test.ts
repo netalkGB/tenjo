@@ -21,7 +21,8 @@ vi.mock('node:crypto', () => ({
 const createMockGlobalSettingRepo = () => ({
   getSettings: vi.fn(),
   getOrCreateSettings: vi.fn(),
-  updateSettings: vi.fn()
+  updateSettings: vi.fn(),
+  updateSettingSection: vi.fn()
 });
 
 const createMockCredentialStoreService = () => ({
@@ -182,6 +183,78 @@ describe('GlobalSettingService', () => {
     });
   });
 
+  describe('resolveModelReference', () => {
+    it('should resolve display-safe model fields without loading credentials', async () => {
+      const entry = makeModelEntry({ tokenCredentialId: 'cred-1' });
+      repo.getSettings.mockResolvedValue(
+        makeGlobalSettings({
+          model: makeModelSettings({ models: [entry] })
+        })
+      );
+
+      const result = await service.resolveModelReference('model-1');
+
+      expect(result).toEqual({
+        id: 'model-1',
+        type: 'openai',
+        baseUrl: 'https://api.openai.com',
+        model: 'gpt-4'
+      });
+      expect(credentialStore.load).not.toHaveBeenCalled();
+    });
+
+    it('should throw ModelNotFoundError when modelId is undefined', async () => {
+      await expect(service.resolveModelReference(undefined)).rejects.toThrow(
+        ModelNotFoundError
+      );
+    });
+  });
+
+  describe('findModelReference', () => {
+    it('should find a model by provider, base URL, and model name', async () => {
+      const entry = makeModelEntry({
+        id: 'new-model-id',
+        type: 'openai',
+        baseUrl: 'https://api.openai.com',
+        model: 'gpt-4'
+      });
+      repo.getSettings.mockResolvedValue(
+        makeGlobalSettings({
+          model: makeModelSettings({ models: [entry] })
+        })
+      );
+
+      const result = await service.findModelReference({
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com',
+        model: 'gpt-4'
+      });
+
+      expect(result).toEqual({
+        id: 'new-model-id',
+        type: 'openai',
+        baseUrl: 'https://api.openai.com',
+        model: 'gpt-4'
+      });
+    });
+
+    it('should return null when no matching model exists', async () => {
+      repo.getSettings.mockResolvedValue(
+        makeGlobalSettings({
+          model: makeModelSettings({ models: [makeModelEntry()] })
+        })
+      );
+
+      await expect(
+        service.findModelReference({
+          provider: 'openai',
+          baseUrl: 'https://api.openai.com',
+          model: 'different'
+        })
+      ).resolves.toBeNull();
+    });
+  });
+
   describe('getModelSettingsForClient', () => {
     it('should return models without token credential IDs', async () => {
       const models: ModelEntry[] = [
@@ -283,16 +356,15 @@ describe('GlobalSettingService', () => {
         maxContextLength: 128000
       });
       expect(credentialStore.save).toHaveBeenCalledWith('sk-secret');
-      expect(repo.updateSettings).toHaveBeenCalledWith(
+      expect(repo.updateSettingSection).toHaveBeenCalledWith(
+        'model',
         expect.objectContaining({
-          model: expect.objectContaining({
-            models: [
-              expect.objectContaining({
-                id: 'generated-uuid',
-                tokenCredentialId: 'new-cred-id'
-              })
-            ]
-          })
+          models: [
+            expect.objectContaining({
+              id: 'generated-uuid',
+              tokenCredentialId: 'new-cred-id'
+            })
+          ]
         }),
         'user-1'
       );
@@ -344,7 +416,7 @@ describe('GlobalSettingService', () => {
         )
       ).rejects.toThrow(ModelDuplicateError);
 
-      expect(repo.updateSettings).not.toHaveBeenCalled();
+      expect(repo.updateSettingSection).not.toHaveBeenCalled();
     });
   });
 
@@ -365,11 +437,10 @@ describe('GlobalSettingService', () => {
       await service.deleteModel('model-to-delete', 'user-1');
 
       expect(credentialStore.delete).toHaveBeenCalledWith('cred-to-delete');
-      expect(repo.updateSettings).toHaveBeenCalledWith(
+      expect(repo.updateSettingSection).toHaveBeenCalledWith(
+        'model',
         expect.objectContaining({
-          model: expect.objectContaining({
-            models: []
-          })
+          models: []
         }),
         'user-1'
       );
@@ -391,7 +462,7 @@ describe('GlobalSettingService', () => {
       await service.deleteModel('model-to-delete', 'user-1');
 
       expect(credentialStore.delete).not.toHaveBeenCalled();
-      expect(repo.updateSettings).toHaveBeenCalledOnce();
+      expect(repo.updateSettingSection).toHaveBeenCalledOnce();
     });
 
     it('should clear activeId when deleting the active model', async () => {
@@ -406,11 +477,10 @@ describe('GlobalSettingService', () => {
 
       await service.deleteModel('active-model', 'user-1');
 
-      expect(repo.updateSettings).toHaveBeenCalledWith(
+      expect(repo.updateSettingSection).toHaveBeenCalledWith(
+        'model',
         expect.objectContaining({
-          model: expect.objectContaining({
-            activeId: ''
-          })
+          activeId: ''
         }),
         'user-1'
       );
@@ -425,7 +495,7 @@ describe('GlobalSettingService', () => {
         ModelNotFoundError
       );
 
-      expect(repo.updateSettings).not.toHaveBeenCalled();
+      expect(repo.updateSettingSection).not.toHaveBeenCalled();
     });
 
     it('should throw ModelNotFoundError when model does not exist', async () => {
@@ -439,7 +509,7 @@ describe('GlobalSettingService', () => {
         service.deleteModel('nonexistent', 'user-1')
       ).rejects.toThrow(ModelNotFoundError);
 
-      expect(repo.updateSettings).not.toHaveBeenCalled();
+      expect(repo.updateSettingSection).not.toHaveBeenCalled();
     });
   });
 
@@ -454,10 +524,9 @@ describe('GlobalSettingService', () => {
 
       await service.updateMcpServersConfig(newMcpConfig, 'user-1');
 
-      expect(repo.updateSettings).toHaveBeenCalledWith(
-        expect.objectContaining({
-          mcpServers: newMcpConfig
-        }),
+      expect(repo.updateSettingSection).toHaveBeenCalledWith(
+        'mcpServers',
+        newMcpConfig,
         'user-1'
       );
     });

@@ -1,12 +1,16 @@
 import { BaseRepository } from './BaseRepository';
 
-export type ApproveState = 'auto_approve' | 'manual' | 'banned';
+export const APPROVE_STATES = ['auto_approve', 'manual', 'banned'] as const;
+
+export type ApproveState = (typeof APPROVE_STATES)[number];
 
 export interface ToolApprovalRule {
   id: string;
   user_id: string;
   tool_name: string;
   approve: ApproveState;
+  created_by: string | null;
+  updated_by: string | null;
   created_at: Date | null;
   updated_at: Date | null;
 }
@@ -16,6 +20,8 @@ export interface InsertToolApprovalRule {
   user_id: string;
   tool_name: string;
   approve?: ApproveState;
+  created_by?: string | null;
+  updated_by?: string | null;
   created_at?: Date | null;
   updated_at?: Date | null;
 }
@@ -27,6 +33,8 @@ const COLUMNS = [
   'user_id',
   'tool_name',
   'approve',
+  'created_by',
+  'updated_by',
   'created_at',
   'updated_at'
 ] as const;
@@ -54,7 +62,11 @@ export class ToolApprovalRuleRepository extends BaseRepository {
   async create(ruleData: InsertToolApprovalRule): Promise<ToolApprovalRule> {
     return await this.insertReturning<ToolApprovalRule>(
       'tool_approval_rules',
-      { ...ruleData },
+      {
+        ...ruleData,
+        created_by: ruleData.created_by ?? ruleData.user_id,
+        updated_by: ruleData.updated_by ?? ruleData.user_id
+      },
       COLUMNS
     );
   }
@@ -68,8 +80,13 @@ export class ToolApprovalRuleRepository extends BaseRepository {
 
     if (existing) {
       const result = await this.pool.query(
-        `UPDATE "tool_approval_rules" SET "approve" = $1, "updated_at" = $2 WHERE "id" = $3 RETURNING *`,
-        [approve, new Date(), existing.id]
+        `UPDATE "tool_approval_rules"
+            SET "approve" = $1,
+                "updated_by" = $2,
+                "updated_at" = now()
+          WHERE "id" = $3
+          RETURNING *`,
+        [approve, userId, existing.id]
       );
       return result.rows[0] as ToolApprovalRule;
     }

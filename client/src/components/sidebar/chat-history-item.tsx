@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { pinThread } from '@/api/server/chat';
 import { useHistory } from '@/hooks/useHistory';
 import { useTranslation } from '@/hooks/useTranslation';
+import { isUnnamedTitle } from '@/lib/sidebarTitle';
 
 interface ChatHistoryItemProps {
   title?: string;
@@ -45,14 +46,20 @@ export function ChatHistoryItem({
     return <Skeleton className="h-7 w-full" />;
   }
 
+  const displayTitle = isUnnamedTitle(title)
+    ? t('unnamed_title')
+    : (title ?? '');
+
   const handleRename = (event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
     setMenuOpen(false);
 
-    if (!id || !title) return;
+    if (!id) return;
 
-    const currentValueRef = { value: title };
+    const currentValueRef = {
+      value: isUnnamedTitle(title) ? '' : (title ?? '')
+    };
 
     const handleRenameSubmit = async () => {
       if (!id || currentValueRef.value.trim().length === 0) return;
@@ -66,7 +73,7 @@ export function ChatHistoryItem({
       title: t('rename_title'),
       content: (
         <RenameDialogContent
-          defaultValue={title}
+          defaultValue={currentValueRef.value}
           onValueChange={v => {
             currentValueRef.value = v;
           }}
@@ -142,7 +149,7 @@ export function ChatHistoryItem({
       {/* Chat link with right padding to make room for the menu button */}
       <SidebarMenuSubButton asChild className="pr-8">
         <Link to={`/chat/${id}`} className="overflow-hidden">
-          <span className="truncate">{title}</span>
+          <span className="truncate">{displayTitle}</span>
         </Link>
       </SidebarMenuSubButton>
       {/* Three-dot menu button (horizontal dots) - shown on hover */}

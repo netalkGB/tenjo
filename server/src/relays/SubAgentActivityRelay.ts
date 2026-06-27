@@ -1,18 +1,18 @@
-import { randomUUID } from 'node:crypto';
 import {
   buildDuckDuckGoSearchUrl,
   sanitizeDuckDuckGoQuery,
   type BrowserResearchAgent
 } from 'tenjo-chat-engine';
+import { generateUuidV4 } from '../utils/generateUuidV4';
 
 /**
  * Generic, framework-style payload for sub-agent activity relayed to the
- * client. New sub-agents (e.g. a coding sub-agent) should reuse this shape so
+ * client. New sub-agents (for example a coding sub-agent) should reuse this shape so
  * the UI can render their progress with the same component.
  *
  * `agentType` tags which sub-agent emitted the event so the UI can choose how
  * to render it; `toolName` + `detail` are the only things normally surfaced
- * (e.g. "browser_navigate" + the URL it loaded). `url`, when set, is the
+ * (for example "browser_navigate" + the URL it loaded). `url`, when set, is the
  * page the sub-agent loaded — search activities carry the SERP URL so the
  * client does not have to re-derive it.
  */
@@ -44,7 +44,7 @@ export function createSubAgentActivityRelay(
   writer: SubAgentActivityWriter,
   agentType: string = 'browser-research'
 ): void {
-  const agentId = randomUUID();
+  const agentId = generateUuidV4();
   // tool-call id → activityId so the start/end events match up.
   const toolCallToActivity = new Map<string, string>();
 
@@ -80,7 +80,7 @@ export function createSubAgentActivityRelay(
   agent.setEvents({
     onToolStart: (name, args) => {
       if (!isReportable(name)) return;
-      const activityId = randomUUID();
+      const activityId = generateUuidV4();
       // Use args.toolCallId-style key when available; fall back to the
       // activityId so we can still match end events.
       const key = `${name}:${activityId}`;
@@ -113,7 +113,7 @@ export function createSubAgentActivityRelay(
       const matchedActivity = matchedKey
         ? toolCallToActivity.get(matchedKey)
         : undefined;
-      const activityId = matchedActivity ?? randomUUID();
+      const activityId = matchedActivity ?? generateUuidV4();
       if (matchedKey) toolCallToActivity.delete(matchedKey);
       const isError =
         result !== null &&

@@ -6,6 +6,7 @@
 
 import type { BrowserResearchAgent } from './browserResearchAgent';
 import type { Tool } from '../tools/types';
+import type { ToolDefinitionRequest } from '../OpenAIChatApiClient';
 
 export const BROWSER_DELEGATE_TOOL_NAME = 'tenjo_browser_agent';
 
@@ -31,6 +32,31 @@ export const BROWSER_DELEGATE_SYSTEM_HINT = [
   'You MAY answer directly only for: greetings, acknowledgements, math you can compute deterministically, and definitions of well-established general concepts. Everything else — DELEGATE.',
 ].join(' ');
 
+export const BROWSER_DELEGATE_TOOL_DEFINITION: ToolDefinitionRequest = {
+  type: 'function',
+  function: {
+    name: BROWSER_DELEGATE_TOOL_NAME,
+    description:
+      "Delegate web research to a browser-driving sub-agent that runs an isolated browser session and returns the final answer + the URLs it loaded. CRITICAL CONTRACT: pass the user's most recent message as `userMessage` EXACTLY as they wrote it — character-for-character verbatim, no rephrasing, no translation, no summarization, no expansion, no quote marks added or removed. The sub-agent is tuned to answer the user's literal phrasing; any rewriting on your part is observed to degrade results, especially when the message contains handles, IDs, slang, romanized names, or quoted strings. If you would like to add disambiguation, add it as a separate `parentNote` field — do NOT bake it into `userMessage`.",
+    parameters: {
+      type: 'object',
+      properties: {
+        userMessage: {
+          type: 'string',
+          description:
+            "The user's most recent message, copied VERBATIM (character-for-character). Do not paraphrase, translate, summarize, or 'clean up'.",
+        },
+        parentNote: {
+          type: 'string',
+          description:
+            "REQUIRED whenever the user's message is a follow-up that relies on prior conversation (pronouns, 'How about X?' / 'What about X?' / 'And X?' or their equivalents in other languages, ellipsis, comparatives). The sub-agent has NO memory of this conversation — set parentNote to a one-sentence summary of the current topic so the sub-agent can interpret the message correctly. Leave empty ONLY when the user message is fully self-contained.",
+        },
+      },
+      required: ['userMessage'],
+    },
+  },
+};
+
 /**
  * Wrap a {@link BrowserResearchAgent} as a single tool. Each invocation
  * resets the sub-agent's chat history so unrelated delegations do not bleed
@@ -41,30 +67,7 @@ export function createBrowserDelegateTool(
   subAgent: BrowserResearchAgent
 ): Tool {
   return {
-    definition: {
-      type: 'function',
-      function: {
-        name: BROWSER_DELEGATE_TOOL_NAME,
-        description:
-          "Delegate web research to a browser-driving sub-agent that runs an isolated browser session and returns the final answer + the URLs it loaded. CRITICAL CONTRACT: pass the user's most recent message as `userMessage` EXACTLY as they wrote it — character-for-character verbatim, no rephrasing, no translation, no summarization, no expansion, no quote marks added or removed. The sub-agent is tuned to answer the user's literal phrasing; any rewriting on your part is observed to degrade results, especially when the message contains handles, IDs, slang, romanized names, or quoted strings. If you would like to add disambiguation, add it as a separate `parentNote` field — do NOT bake it into `userMessage`.",
-        parameters: {
-          type: 'object',
-          properties: {
-            userMessage: {
-              type: 'string',
-              description:
-                "The user's most recent message, copied VERBATIM (character-for-character). Do not paraphrase, translate, summarize, or 'clean up'.",
-            },
-            parentNote: {
-              type: 'string',
-              description:
-                "REQUIRED whenever the user's message is a follow-up that relies on prior conversation (pronouns, 'How about X?' / 'What about X?' / 'And X?' or their equivalents in other languages, ellipsis, comparatives). The sub-agent has NO memory of this conversation — set parentNote to a one-sentence summary of the current topic so the sub-agent can interpret the message correctly. Leave empty ONLY when the user message is fully self-contained.",
-            },
-          },
-          required: ['userMessage'],
-        },
-      },
-    },
+    definition: BROWSER_DELEGATE_TOOL_DEFINITION,
     handler: async (args) => {
       const userMessage =
         typeof args.userMessage === 'string' ? args.userMessage : '';

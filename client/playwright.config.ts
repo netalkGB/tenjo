@@ -28,7 +28,25 @@ export default defineConfig({
     {
       name: 'flows',
       testDir: './e2e/tests/flows',
+      // The agent suite runs in its own project (below) so it can stay serial
+      // while the regular flow specs remain fully parallel.
+      testIgnore: /agent\.spec\.ts/,
       fullyParallel: true,
+      dependencies: ['setup']
+    },
+    {
+      // Agent E2E: serial because the coding-agent sandbox is shared by the
+      // agent tests. It uses a dedicated agent admin and disables MCP tools only
+      // for that user, so it can run alongside the chat/settings admin flows.
+      name: 'agent',
+      testDir: './e2e/tests/flows',
+      testMatch: /agent\.spec\.ts/,
+      fullyParallel: false,
+      workers: 1,
+      // Agent turns drive a real local model, which is occasionally slow/stuck on
+      // a turn — retry so a single transient miss doesn't fail (and, in a serial
+      // block, skip) the suite.
+      retries: 2,
       dependencies: ['setup']
     }
   ],
@@ -52,7 +70,7 @@ export default defineConfig({
   use: {
     trace: 'on-first-retry',
     baseURL: `http://localhost:${port}`,
-    headless: false
+    headless: process.env.E2E_HEADLESS === 'true' ? true : false
     // launchOptions: { slowMo: 500 },
   }
 });

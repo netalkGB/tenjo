@@ -4,6 +4,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import logger from './logger.js';
+import { McpUnsupportedTransportError } from './McpError.js';
 
 export interface StdioMcpServerConfig {
   type: 'stdio';
@@ -31,39 +32,6 @@ export type McpServerConfig =
   | OAuthHttpMcpServerConfig;
 
 export type McpServersConfig = Record<string, McpServerConfig>;
-
-/**
- * For backward compatibility, normalizes configs without a type field as stdio.
- */
-export function normalizeMcpServerConfig(
-  config: Record<string, unknown>
-): McpServerConfig {
-  const type = (config.type as string) || 'stdio';
-
-  if (type === 'http') {
-    return {
-      type: 'http',
-      url: config.url as string,
-      headers: (config.headers as Record<string, string>) || undefined,
-    };
-  }
-
-  if (type === 'oauth-http') {
-    return {
-      type: 'oauth-http',
-      url: config.url as string,
-      clientId: (config.clientId as string) || undefined,
-      clientSecret: (config.clientSecret as string) || undefined,
-    };
-  }
-
-  return {
-    type: 'stdio',
-    command: config.command as string,
-    args: (config.args as string[]) || undefined,
-    env: (config.env as Record<string, string>) || undefined,
-  };
-}
 
 /**
  * Probes whether a URL supports the StreamableHTTP protocol by sending
@@ -169,7 +137,7 @@ export async function createTransport(
   serverConfig: McpServerConfig
 ): Promise<Transport> {
   if (serverConfig.type === 'oauth-http') {
-    throw new Error(
+    throw new McpUnsupportedTransportError(
       'OAuth HTTP transport requires token resolution before creation'
     );
   }

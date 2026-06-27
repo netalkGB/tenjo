@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { McpToolNotFoundError } from './McpError.js';
 import type { ToolDefinitionRequest } from './OpenAIChatApiClient.js';
 
 export class McpClientManager {
@@ -111,7 +112,7 @@ export class McpClientManager {
       }
     }
 
-    throw new Error(`Tool ${name} not found in any connected MCP server`);
+    throw new McpToolNotFoundError(name);
   }
 
   public async close() {

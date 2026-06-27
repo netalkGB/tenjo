@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { userRepo } from '../repositories/registry';
@@ -6,6 +5,7 @@ import type { SessionUser } from '../types/api';
 import type { User } from '../repositories/UserRepository';
 import { HttpError } from '../errors/HttpError';
 import { isSingleUserMode } from '../utils/env';
+import { generateUuidV4 } from '../utils/generateUuidV4';
 import { hashPassword } from '../utils/passwordHasher';
 import logger from '../logger';
 
@@ -31,7 +31,7 @@ async function ensureSingleUser(): Promise<User> {
   }
 
   // Hash a random UUID as password (not usable for login)
-  const randomPassword = await hashPassword(crypto.randomUUID());
+  const randomPassword = await hashPassword(generateUuidV4());
 
   const user = await userRepo.create({
     user_name: 'standalone',

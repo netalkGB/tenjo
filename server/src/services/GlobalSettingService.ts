@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import type {
   GlobalSettingRepository,
   GlobalSettings,
@@ -12,6 +11,7 @@ import type { CredentialStoreService } from './CredentialStoreService';
 import type { FileUploadService } from './FileUploadService';
 import type { McpServersConfig } from 'tenjo-chat-engine';
 import { ServiceError } from '../errors/ServiceError';
+import { generateUuidV4 } from '../utils/generateUuidV4';
 
 export class ModelNotFoundError extends ServiceError {
   constructor(message: string = 'Model setting not found') {
@@ -24,6 +24,19 @@ export class ModelDuplicateError extends ServiceError {}
 export class BrandingValidationError extends ServiceError {}
 
 const APP_TITLE_MAX_LENGTH = 60;
+
+export interface ModelReference {
+  id: string;
+  type: ModelEntry['type'];
+  baseUrl: string;
+  model: string;
+}
+
+export interface ModelReferenceLookup {
+  provider: string;
+  baseUrl: string;
+  model: string;
+}
 
 export interface BrandingPatch {
   appTitle?: string | null;
@@ -45,6 +58,22 @@ export class GlobalSettingService {
   async getModelSettings(): Promise<ModelSettings> {
     const settings = await this.getGlobalSettings();
     return settings.model ?? { activeId: '', models: [] };
+  }
+
+  /**
+   * The configured context-window size (tokens) for a model entry, or null when
+   * unknown. Used by the coding agent to size its compaction/summarization so a
+   * long session does not overflow the window.
+   */
+  async resolveModelMaxContext(
+    modelId: string | undefined
+  ): Promise<number | null> {
+    if (!modelId) {
+      return null;
+    }
+    const modelSettings = await this.getModelSettings();
+    const entry = modelSettings.models.find((m) => m.id === modelId);
+    return entry?.maxContextLength ?? null;
   }
 
   async resolveModelConfig(modelId: string | undefined): Promise<ModelConfig> {
@@ -74,6 +103,57 @@ export class GlobalSettingService {
       baseUrl: entry.baseUrl,
       model: entry.model,
       token
+    };
+  }
+
+  async resolveModelReference(
+    modelId: string | undefined
+  ): Promise<ModelReference> {
+    if (!modelId) {
+      throw new ModelNotFoundError('Model ID is required');
+    }
+
+    const settings = await this.getGlobalSettings();
+    const modelSettings = settings.model;
+
+    if (!modelSettings) {
+      throw new ModelNotFoundError();
+    }
+
+    const entry = modelSettings.models.find((m) => m.id === modelId);
+
+    if (!entry) {
+      throw new ModelNotFoundError();
+    }
+
+    return {
+      id: entry.id,
+      type: entry.type,
+      baseUrl: entry.baseUrl,
+      model: entry.model
+    };
+  }
+
+  async findModelReference(
+    lookup: ModelReferenceLookup
+  ): Promise<ModelReference | null> {
+    const modelSettings = await this.getModelSettings();
+    const entry = modelSettings.models.find(
+      (m) =>
+        m.type === lookup.provider &&
+        m.baseUrl === lookup.baseUrl &&
+        m.model === lookup.model
+    );
+
+    if (!entry) {
+      return null;
+    }
+
+    return {
+      id: entry.id,
+      type: entry.type,
+      baseUrl: entry.baseUrl,
+      model: entry.model
     };
   }
 
@@ -131,7 +211,7 @@ export class GlobalSettingService {
     }
 
     const newEntry: ModelEntry = {
-      id: crypto.randomUUID(),
+      id: generateUuidV4(),
       type: entry.type,
       baseUrl: entry.baseUrl,
       model: entry.model,
@@ -140,8 +220,11 @@ export class GlobalSettingService {
     };
 
     modelSettings.models.push(newEntry);
-    const updated: GlobalSettings = { ...settings, model: modelSettings };
-    await this.globalSettingRepo.updateSettings(updated, userId);
+    await this.globalSettingRepo.updateSettingSection(
+      'model',
+      modelSettings,
+      userId
+    );
 
     return {
       id: newEntry.id,
@@ -176,17 +259,22 @@ export class GlobalSettingService {
       modelSettings.activeId = '';
     }
 
-    const updated: GlobalSettings = { ...settings, model: modelSettings };
-    await this.globalSettingRepo.updateSettings(updated, userId);
+    await this.globalSettingRepo.updateSettingSection(
+      'model',
+      modelSettings,
+      userId
+    );
   }
 
   async updateMcpServersConfig(
     mcpServers: McpServersConfig,
     userId: string
   ): Promise<void> {
-    const settings = await this.globalSettingRepo.getOrCreateSettings();
-    const updated: GlobalSettings = { ...settings, mcpServers };
-    await this.globalSettingRepo.updateSettings(updated, userId);
+    await this.globalSettingRepo.updateSettingSection(
+      'mcpServers',
+      mcpServers,
+      userId
+    );
   }
 
   async getBrandingSettings(): Promise<BrandingSettings> {
@@ -246,8 +334,7 @@ export class GlobalSettingService {
       }
     }
 
-    const updated: GlobalSettings = { ...settings, branding: next };
-    await this.globalSettingRepo.updateSettings(updated, userId);
+    await this.globalSettingRepo.updateSettingSection('branding', next, userId);
 
     for (const filename of orphanedFiles) {
       await this.fileUploadService.delete(filename);

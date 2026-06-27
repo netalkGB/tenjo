@@ -54,6 +54,8 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       expect(rule.user_id).toBe(testUserId);
       expect(rule.tool_name).toBe('file_read');
       expect(rule.approve).toBe('auto_approve');
+      expect(rule.created_by).toBe(testUserId);
+      expect(rule.updated_by).toBe(testUserId);
     });
 
     it('should auto-generate unique ids', async () => {
@@ -174,6 +176,7 @@ describe('ToolApprovalRuleRepository (Integration Tests)', () => {
       );
 
       expect(updated.approve).toBe('banned');
+      expect(updated.updated_by).toBe(testUserId);
 
       // Verify only one rule exists
       const rules = await toolApprovalRuleRepository.findByUserId(testUserId);

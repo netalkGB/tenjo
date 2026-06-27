@@ -5,10 +5,20 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { useEffect, useRef, useState } from 'react';
-import { Copy, Check, Play, Code2, ChevronDown } from 'lucide-react';
+import {
+  Copy,
+  Check,
+  Play,
+  Code2,
+  ChevronDown,
+  Download,
+  Eye,
+  Monitor
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { remarkFileLinks } from '@/lib/remarkFileLinks';
 import { useDialog } from '@/hooks/useDialog';
 import { usePreview } from '@/hooks/usePreview';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -250,25 +260,111 @@ function isInlineCode(className?: string): boolean {
   return !LANGUAGE_PATTERN.test(className || '');
 }
 
+/** A markdown href resolved to a downloadable artifact. */
+export interface ResolvedFileLink {
+  url: string;
+  name: string;
+  /** When set, clicking opens an in-app preview instead of downloading. */
+  onOpen?: () => void;
+}
+
+/**
+ * An http(s) URL on localhost — these point INSIDE the agent sandbox (a dev
+ * server the agent started), so when `onOpenLocalUrl` is provided they open
+ * the in-app GUI preview instead of navigating the user's own browser.
+ */
+const LOCAL_URL_PATTERN =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:[/?#]|$)/i;
+
+/** Opens sandbox localhost URLs in the in-app preview. */
+function LocalUrlPreviewLink({
+  href,
+  onOpen,
+  label
+}: {
+  href: string;
+  onOpen: (url: string) => void;
+  label: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="mx-0.5 inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-0.5 align-middle text-sm font-medium no-underline transition-colors hover:bg-accent hover:text-accent-foreground"
+      onClick={event => {
+        event.preventDefault();
+        onOpen(href);
+      }}
+    >
+      <Monitor className="size-4" aria-hidden="true" />
+      {label}
+    </a>
+  );
+}
+
+/**
+ * A workspace-relative href: no URL scheme, not protocol-relative and not an
+ * in-page anchor. Only these are offered to `resolveFileLink`.
+ */
+function isRelativeHref(href: string): boolean {
+  return (
+    !/^[a-z][a-z0-9+.-]*:/i.test(href) &&
+    !href.startsWith('//') &&
+    !href.startsWith('#')
+  );
+}
+
 interface MarkdownRendererProps {
   markdown: string;
   messageId?: string;
   isStreaming?: boolean;
+  /**
+   * Maps a workspace-relative href to a downloadable artifact. When provided,
+   * resolved links download the file and unresolved relative links render as
+   * plain text (they would navigate nowhere in the SPA). External links are
+   * unaffected.
+   */
+  resolveFileLink?: (href: string) => ResolvedFileLink | null;
+  /**
+   * Opens a localhost URL (a dev server inside the agent sandbox) in the GUI
+   * preview. When provided, clicks on such links are intercepted.
+   */
+  onOpenLocalUrl?: (url: string) => void;
 }
 
 export function MarkdownRenderer({
   markdown,
   messageId,
-  isStreaming
+  isStreaming,
+  resolveFileLink,
+  onOpenLocalUrl
 }: MarkdownRendererProps) {
+  const { t } = useTranslation();
   return (
     <div className="prose prose-base max-w-none dark:prose-invert prose-headings:font-bold prose-h1:text-4xl prose-h2:text-3xl prose-h3:text-2xl prose-h4:text-xl prose-p:my-5 prose-p:leading-relaxed prose-ul:my-5 prose-ol:my-5 prose-li:my-2 prose-table:my-6 prose-thead:bg-gray-100 dark:prose-thead:bg-gray-800 prose-th:border prose-th:border-gray-300 dark:prose-th:border-gray-600 prose-th:px-4 prose-th:py-2 prose-td:border prose-td:border-gray-300 dark:prose-td:border-gray-600 prose-td:px-4 prose-td:py-2">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={
+          // Auto-link bare/inline-code mentions of downloadable artifacts —
+          // models don't reliably emit markdown links for generated files.
+          resolveFileLink
+            ? [remarkGfm, remarkMath, [remarkFileLinks, resolveFileLink]]
+            : [remarkGfm, remarkMath]
+        }
         rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeKatex]}
         components={{
           code({ children: markdown, className, node, ...props }) {
             if (isInlineCode(className)) {
+              // A localhost URL the model wrapped in backticks: still surface it
+              // as a preview action (mirrors the anchor handler below).
+              const text = extractText(markdown).trim();
+              if (onOpenLocalUrl && LOCAL_URL_PATTERN.test(text)) {
+                return (
+                  <LocalUrlPreviewLink
+                    href={text}
+                    onOpen={onOpenLocalUrl}
+                    label={t('markdown_open_in_preview')}
+                  />
+                );
+              }
               return (
                 <code className={className} {...props}>
                   {markdown}
@@ -291,6 +387,52 @@ export function MarkdownRenderer({
             return <>{markdown}</>;
           },
           a({ children, href, ...props }) {
+            if (href && onOpenLocalUrl && LOCAL_URL_PATTERN.test(href)) {
+              return (
+                <LocalUrlPreviewLink
+                  href={href}
+                  onOpen={onOpenLocalUrl}
+                  label={t('markdown_open_in_preview')}
+                />
+              );
+            }
+            if (href && resolveFileLink && isRelativeHref(href)) {
+              const file = resolveFileLink(href);
+              if (!file) {
+                return <span>{children}</span>;
+              }
+              if (file.onOpen) {
+                // Previewable artifact: open the in-app preview dialog. The
+                // href is kept so middle-click / "open in new tab" still
+                // fetches the file directly.
+                const open = file.onOpen;
+                return (
+                  <a
+                    href={file.url}
+                    className="mx-0.5 inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-0.5 align-middle text-sm font-medium no-underline transition-colors hover:bg-accent hover:text-accent-foreground"
+                    onClick={event => {
+                      event.preventDefault();
+                      open();
+                    }}
+                    {...props}
+                  >
+                    <Eye className="size-4 self-center" aria-hidden="true" />
+                    {file.name}
+                  </a>
+                );
+              }
+              return (
+                <a
+                  href={file.url}
+                  download={file.name}
+                  className="inline-flex items-baseline gap-1"
+                  {...props}
+                >
+                  <Download className="size-4 self-center" aria-hidden="true" />
+                  {file.name}
+                </a>
+              );
+            }
             return (
               <a
                 href={href}

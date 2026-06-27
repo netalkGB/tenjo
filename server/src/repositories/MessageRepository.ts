@@ -1,12 +1,14 @@
 import { BaseRepository } from './BaseRepository';
 
+export type MessageSource = 'user' | 'assistant';
+
 export interface Message {
   id: string;
   thread_id: string;
   parent_message_id: string | null;
   selected_child_id: string | null;
   data: unknown;
-  source: 'user' | 'assistant';
+  source: MessageSource;
   model: string | null;
   provider: string | null;
   created_by: string | null;
@@ -21,7 +23,7 @@ export interface InsertMessage {
   parent_message_id?: string | null;
   selected_child_id?: string | null;
   data: unknown;
-  source: 'user' | 'assistant';
+  source: MessageSource;
   model?: string | null;
   provider?: string | null;
   created_by?: string | null;
@@ -57,6 +59,23 @@ export class MessageRepository extends BaseRepository {
     const result = await this.pool.query(
       `SELECT * FROM "messages" WHERE "id" = $1`,
       [id]
+    );
+    return result.rows[0] as Message | undefined;
+  }
+
+  async findByIdAndUser(
+    id: string,
+    userId: string
+  ): Promise<Message | undefined> {
+    const result = await this.pool.query(
+      `
+      SELECT m.*
+      FROM "messages" m
+      INNER JOIN "threads" t ON t."id" = m."thread_id"
+      WHERE m."id" = $1
+        AND t."created_by" = $2
+      `,
+      [id, userId]
     );
     return result.rows[0] as Message | undefined;
   }
@@ -147,7 +166,8 @@ export class MessageRepository extends BaseRepository {
            LATERAL (
              SELECT regexp_match(
                elem->'image_url'->>'url',
-               '/api/upload/artifacts/([^/]+)$'
+               -- Backward compatibility for messages saved before scoped artifact URLs.
+               '(?:/api/chat/threads/[^/]+/artifacts|/api/upload/artifacts)/([^/]+)$'
              ) AS match
            ) AS m
       WHERE "thread_id" = $1

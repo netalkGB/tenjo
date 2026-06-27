@@ -81,6 +81,28 @@ class ToolApprovalEmitter extends EventEmitter {
   }
 
   /**
+   * Waits for approval like {@link waitForApproval}, but cancels the wait when
+   * the given signal aborts and maps a timeout/cancellation to a rejection
+   * instead of throwing. Shared by flows that treat "no decision" as "rejected"
+   * (the coding agent's MCP tool approval).
+   */
+  async waitForDecision(
+    toolCallId: string,
+    signal?: AbortSignal,
+    timeoutMs?: number
+  ): Promise<boolean> {
+    const onAbort = () => this.cancelApproval(toolCallId);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      return await this.waitForApproval(toolCallId, timeoutMs);
+    } catch {
+      return false;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  /**
    * Cancels a pending approval (called on SSE disconnect).
    */
   cancelApproval(toolCallId: string): void {

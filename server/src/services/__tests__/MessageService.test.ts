@@ -41,7 +41,7 @@ vi.mock('../../logger', () => ({
   }
 }));
 
-vi.mock('../ToolApprovalEmitter', () => ({
+vi.mock('../../events/ToolApprovalEmitter', () => ({
   toolApprovalEmitter: {
     waitForApproval: vi.fn(),
     cancelApproval: vi.fn()
@@ -58,7 +58,7 @@ vi.mock('../../utils/env', () => ({
   getDataDir: vi.fn(() => '/tmp/test-data')
 }));
 
-import { toolApprovalEmitter } from '../ToolApprovalEmitter';
+import { toolApprovalEmitter } from '../../events/ToolApprovalEmitter';
 import fs from 'node:fs/promises';
 
 const mockChatClient = {
@@ -78,6 +78,7 @@ import { createChatClient } from '../../factories/chatClientFactory';
 
 const createMockMessageRepo = () => ({
   findById: vi.fn(),
+  findByIdAndUser: vi.fn(),
   findPath: vi.fn(),
   getBranchStatus: vi.fn(),
   switchBranch: vi.fn(),
@@ -236,6 +237,40 @@ describe('MessageService', () => {
       });
     });
 
+    it('should normalize legacy artifact URLs in returned messages', async () => {
+      const msg = makeMessage({
+        id: 'msg-1',
+        thread_id: 'thread-1',
+        data: {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: '/api/upload/artifacts/legacy-image.png'
+              }
+            }
+          ]
+        }
+      });
+      messageRepo.findPath.mockResolvedValue([msg]);
+      messageRepo.getBranchStatus.mockResolvedValue(null);
+
+      const result = await service.getMessagesForThread('thread-1', 'msg-1');
+
+      expect(result[0]?.data).toEqual({
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: {
+              url: '/api/chat/threads/thread-1/artifacts/legacy-image.png'
+            }
+          }
+        ]
+      });
+    });
+
     it('should handle messages with null branch status', async () => {
       const msg = makeMessage();
       messageRepo.findPath.mockResolvedValue([msg]);
@@ -256,7 +291,7 @@ describe('MessageService', () => {
       const msg1 = makeMessage({ id: 'msg-1', parent_message_id: 'parent-1' });
       const msg2 = makeMessage({ id: 'msg-2', parent_message_id: 'parent-1' });
 
-      messageRepo.findById
+      messageRepo.findByIdAndUser
         .mockResolvedValueOnce(msg1)
         .mockResolvedValueOnce(msg2);
       messageRepo.getBranchStatus
@@ -271,7 +306,10 @@ describe('MessageService', () => {
           siblings: ['msg-1', 'msg-2']
         });
 
-      const result = await service.getBranchStatuses(['msg-1', 'msg-2']);
+      const result = await service.getBranchStatuses('user-1', [
+        'msg-1',
+        'msg-2'
+      ]);
 
       expect(result['msg-1']).toEqual({
         currentCount: 1,
@@ -286,26 +324,35 @@ describe('MessageService', () => {
     });
 
     it('should return an empty object for an empty array', async () => {
-      const result = await service.getBranchStatuses([]);
+      const result = await service.getBranchStatuses('user-1', []);
       expect(result).toEqual({});
     });
 
     it('should skip messages that do not exist', async () => {
-      messageRepo.findById.mockResolvedValue(undefined);
+      messageRepo.findByIdAndUser.mockResolvedValue(undefined);
 
-      const result = await service.getBranchStatuses(['nonexistent']);
+      const result = await service.getBranchStatuses('user-1', ['nonexistent']);
 
       expect(result).toEqual({});
     });
 
     it('should skip messages with null branch status', async () => {
       const msg = makeMessage({ id: 'msg-1' });
-      messageRepo.findById.mockResolvedValue(msg);
+      messageRepo.findByIdAndUser.mockResolvedValue(msg);
       messageRepo.getBranchStatus.mockResolvedValue(null);
 
-      const result = await service.getBranchStatuses(['msg-1']);
+      const result = await service.getBranchStatuses('user-1', ['msg-1']);
 
       expect(result).toEqual({});
+    });
+
+    it('should skip messages outside the requested user', async () => {
+      messageRepo.findByIdAndUser.mockResolvedValue(undefined);
+
+      const result = await service.getBranchStatuses('user-1', ['msg-1']);
+
+      expect(result).toEqual({});
+      expect(messageRepo.getBranchStatus).not.toHaveBeenCalled();
     });
   });
 
@@ -326,7 +373,9 @@ describe('MessageService', () => {
         parent_message_id: 'msg-target'
       });
 
-      messageRepo.findById.mockResolvedValue(parentMsg);
+      messageRepo.findByIdAndUser
+        .mockResolvedValueOnce(parentMsg)
+        .mockResolvedValueOnce(targetMsg);
       messageRepo.switchBranch.mockResolvedValue(undefined);
       messageRepo.findPath.mockResolvedValue([targetMsg, leafMsg]);
       messageRepo.getBranchStatus
@@ -343,6 +392,7 @@ describe('MessageService', () => {
 
       const result = await service.switchBranch(
         'thread-1',
+        'user-1',
         'msg-1',
         'msg-target'
       );
@@ -359,10 +409,10 @@ describe('MessageService', () => {
     });
 
     it('should throw MessageNotFoundError when message does not exist', async () => {
-      messageRepo.findById.mockResolvedValue(undefined);
+      messageRepo.findByIdAndUser.mockResolvedValue(undefined);
 
       await expect(
-        service.switchBranch('thread-1', 'nonexistent', 'target')
+        service.switchBranch('thread-1', 'user-1', 'nonexistent', 'target')
       ).rejects.toThrow(MessageNotFoundError);
     });
 
@@ -373,7 +423,9 @@ describe('MessageService', () => {
       });
       const targetMsg = makeMessage({ id: 'msg-target' });
 
-      messageRepo.findById.mockResolvedValue(rootMsg);
+      messageRepo.findByIdAndUser
+        .mockResolvedValueOnce(rootMsg)
+        .mockResolvedValueOnce(targetMsg);
       messageRepo.findPath.mockResolvedValue([targetMsg]);
       messageRepo.getBranchStatus.mockResolvedValue({
         current: 1,
@@ -381,7 +433,12 @@ describe('MessageService', () => {
         siblings: ['msg-target']
       });
 
-      await service.switchBranch('thread-1', 'msg-root', 'msg-target');
+      await service.switchBranch(
+        'thread-1',
+        'user-1',
+        'msg-root',
+        'msg-target'
+      );
 
       expect(messageRepo.switchBranch).not.toHaveBeenCalled();
     });
@@ -392,12 +449,16 @@ describe('MessageService', () => {
         parent_message_id: 'parent-1'
       });
 
-      messageRepo.findById.mockResolvedValue(msg);
+      const targetMsg = makeMessage({ id: 'msg-target' });
+      messageRepo.findByIdAndUser
+        .mockResolvedValueOnce(msg)
+        .mockResolvedValueOnce(targetMsg);
       messageRepo.switchBranch.mockResolvedValue(undefined);
       messageRepo.findPath.mockResolvedValue([]);
 
       const result = await service.switchBranch(
         'thread-1',
+        'user-1',
         'msg-1',
         'msg-target'
       );
@@ -405,6 +466,20 @@ describe('MessageService', () => {
       expect(threadRepo.update).not.toHaveBeenCalled();
       expect(result.leafMessageId).toBeUndefined();
       expect(result.messages).toEqual([]);
+    });
+
+    it('should reject a target sibling outside the user', async () => {
+      const msg = makeMessage({
+        id: 'msg-1',
+        parent_message_id: 'parent-1'
+      });
+      messageRepo.findByIdAndUser
+        .mockResolvedValueOnce(msg)
+        .mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.switchBranch('thread-1', 'user-1', 'msg-1', 'msg-target')
+      ).rejects.toThrow(MessageNotFoundError);
     });
   });
 
@@ -430,8 +505,9 @@ describe('MessageService', () => {
         userMsg,
         assistantMsg
       ]);
+      messageRepo.findByIdAndUser.mockResolvedValue(assistantMsg);
 
-      const result = await service.getContextMessages('asst-1');
+      const result = await service.getContextMessages('user-1', 'asst-1');
 
       expect(messageRepo.findPath).toHaveBeenCalledWith('asst-1');
       expect(result).toHaveLength(2);
@@ -455,8 +531,9 @@ describe('MessageService', () => {
       });
 
       messageRepo.findPath.mockResolvedValue([userMsg]);
+      messageRepo.findByIdAndUser.mockResolvedValue(userMsg);
 
-      const result = await service.getContextMessages('user-1');
+      const result = await service.getContextMessages('user-1', 'user-1');
 
       expect(result).toHaveLength(1);
       expect(result[0].content).toEqual([
@@ -476,10 +553,19 @@ describe('MessageService', () => {
       const msgNoData = makeMessage({ id: 'msg-2', data: null });
 
       messageRepo.findPath.mockResolvedValue([msgWithData, msgNoData]);
+      messageRepo.findByIdAndUser.mockResolvedValue(msgNoData);
 
-      const result = await service.getContextMessages('msg-2');
+      const result = await service.getContextMessages('user-1', 'msg-2');
 
       expect(result).toHaveLength(1);
+    });
+
+    it('should reject a context message outside the user', async () => {
+      messageRepo.findByIdAndUser.mockResolvedValue(undefined);
+
+      await expect(
+        service.getContextMessages('user-1', 'msg-1')
+      ).rejects.toThrow(MessageNotFoundError);
     });
   });
 
@@ -498,11 +584,10 @@ describe('MessageService', () => {
         data: { role: 'user', content: 'What is TypeScript?' }
       });
 
-      messageRepo.findById
-        .mockResolvedValueOnce(assistantMsg)
-        .mockResolvedValueOnce(userMsg);
+      messageRepo.findByIdAndUser.mockResolvedValueOnce(assistantMsg);
+      messageRepo.findById.mockResolvedValueOnce(userMsg);
 
-      const result = await service.getUserPrompt('asst-1');
+      const result = await service.getUserPrompt('user-1', 'asst-1');
 
       expect(result).toBe('What is TypeScript?');
     });
@@ -524,21 +609,20 @@ describe('MessageService', () => {
         }
       });
 
-      messageRepo.findById
-        .mockResolvedValueOnce(assistantMsg)
-        .mockResolvedValueOnce(userMsg);
+      messageRepo.findByIdAndUser.mockResolvedValueOnce(assistantMsg);
+      messageRepo.findById.mockResolvedValueOnce(userMsg);
 
-      const result = await service.getUserPrompt('asst-1');
+      const result = await service.getUserPrompt('user-1', 'asst-1');
 
       expect(result).toBe('Describe this image');
     });
 
     it('should throw MessageNotFoundError when assistant message does not exist', async () => {
-      messageRepo.findById.mockResolvedValue(undefined);
+      messageRepo.findByIdAndUser.mockResolvedValue(undefined);
 
-      await expect(service.getUserPrompt('nonexistent')).rejects.toThrow(
-        MessageNotFoundError
-      );
+      await expect(
+        service.getUserPrompt('user-1', 'nonexistent')
+      ).rejects.toThrow(MessageNotFoundError);
     });
 
     it('should throw MessageValidationError when assistant message has no parent', async () => {
@@ -547,9 +631,9 @@ describe('MessageService', () => {
         parent_message_id: null
       });
 
-      messageRepo.findById.mockResolvedValue(assistantMsg);
+      messageRepo.findByIdAndUser.mockResolvedValue(assistantMsg);
 
-      await expect(service.getUserPrompt('asst-1')).rejects.toThrow(
+      await expect(service.getUserPrompt('user-1', 'asst-1')).rejects.toThrow(
         MessageValidationError
       );
     });
@@ -560,11 +644,10 @@ describe('MessageService', () => {
         parent_message_id: 'user-1'
       });
 
-      messageRepo.findById
-        .mockResolvedValueOnce(assistantMsg)
-        .mockResolvedValueOnce(undefined);
+      messageRepo.findByIdAndUser.mockResolvedValueOnce(assistantMsg);
+      messageRepo.findById.mockResolvedValueOnce(undefined);
 
-      await expect(service.getUserPrompt('asst-1')).rejects.toThrow(
+      await expect(service.getUserPrompt('user-1', 'asst-1')).rejects.toThrow(
         MessageNotFoundError
       );
     });
@@ -579,13 +662,31 @@ describe('MessageService', () => {
         data: { role: 'user', content: null }
       });
 
-      messageRepo.findById
-        .mockResolvedValueOnce(assistantMsg)
-        .mockResolvedValueOnce(userMsg);
+      messageRepo.findByIdAndUser.mockResolvedValueOnce(assistantMsg);
+      messageRepo.findById.mockResolvedValueOnce(userMsg);
 
-      const result = await service.getUserPrompt('asst-1');
+      const result = await service.getUserPrompt('user-1', 'asst-1');
 
       expect(result).toBe('');
+    });
+
+    it('should return a parent prompt from another thread owned by the same user', async () => {
+      const assistantMsg = makeMessage({
+        id: 'asst-1',
+        parent_message_id: 'user-1'
+      });
+      const userMsg = makeMessage({
+        id: 'user-1',
+        thread_id: 'thread-2',
+        data: { role: 'user', content: 'Other thread' }
+      });
+
+      messageRepo.findByIdAndUser.mockResolvedValueOnce(assistantMsg);
+      messageRepo.findById.mockResolvedValueOnce(userMsg);
+
+      await expect(service.getUserPrompt('user-1', 'asst-1')).resolves.toBe(
+        'Other thread'
+      );
     });
   });
 
@@ -830,6 +931,9 @@ describe('MessageService', () => {
 
     const setupAddMessage = () => {
       savedMessageCounter = 0;
+      messageRepo.findByIdAndUser.mockResolvedValue(
+        makeMessage({ id: 'parent-1', thread_id: 'thread-1' })
+      );
       messageRepo.addMessage.mockImplementation(async () => {
         savedMessageCounter++;
         return {
@@ -871,7 +975,8 @@ describe('MessageService', () => {
     ): ProcessMessageStreamParams => ({
       threadId: overrides.threadId ?? 'thread-1',
       message: overrides.message ?? 'Hello',
-      parentMessageId: overrides.parentMessageId ?? 'parent-1',
+      parentMessageId:
+        'parentMessageId' in overrides ? overrides.parentMessageId : 'parent-1',
       userId: overrides.userId ?? 'user-1',
       mcpClientManager: (overrides.mcpManager ??
         createMockMcpClientManager()) as unknown as McpClientManager,
@@ -891,6 +996,9 @@ describe('MessageService', () => {
       setupAddMessage();
       const { client, triggerMessageAdded } = createMockChatClientForStream();
       const writer = createMockWriter();
+      messageRepo.findByIdAndUser.mockResolvedValue(
+        makeMessage({ id: 'parent-1', thread_id: 'thread-1' })
+      );
 
       // When sendMessage is called, simulate context added callbacks
       client.sendMessage.mockImplementation(async () => {
@@ -920,7 +1028,7 @@ describe('MessageService', () => {
       const mockReadFile = vi.mocked(fs.readFile);
       mockReadFile.mockResolvedValue(Buffer.from('fake-image-data'));
 
-      const imageUrl = '/api/upload/artifacts/test-image.png';
+      const imageUrl = '/api/chat/threads/thread-1/artifacts/test-image.png';
 
       client.sendMessage.mockImplementation(
         async (_msg: unknown, imageUrls: string[] | undefined) => {
@@ -1002,7 +1110,7 @@ describe('MessageService', () => {
         new Error('ENOENT: no such file')
       );
 
-      const imageUrl = '/api/upload/artifacts/missing-image.png';
+      const imageUrl = '/api/chat/threads/thread-1/artifacts/missing-image.png';
 
       client.sendMessage.mockImplementation(
         async (_msg: unknown, imageUrls: string[] | undefined) => {
@@ -1687,6 +1795,9 @@ describe('MessageService', () => {
 
     it('should serialize concurrent onMessageAdded saves so parent_message_id chains correctly', async () => {
       threadRepo.update.mockResolvedValue(undefined);
+      messageRepo.findByIdAndUser.mockResolvedValue(
+        makeMessage({ id: 'parent-1', thread_id: 'thread-1' })
+      );
 
       // Track the order in which addMessage *resolves*. The user-message save
       // is intentionally slower than the assistant-message save would be,

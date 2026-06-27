@@ -77,9 +77,7 @@ test.describe
       await page.goto('/settings/branding');
 
       await waitForBrandingResponse(page, 'PUT', '/logo', () =>
-        page
-          .getByTestId('branding-logo-file-input')
-          .setInputFiles(IMAGE_PATH)
+        page.getByTestId('branding-logo-file-input').setInputFiles(IMAGE_PATH)
       );
 
       // Reset becomes enabled once a custom logo is set
@@ -88,7 +86,7 @@ test.describe
       // Sidebar logo should now render an <img> pointing to the uploaded asset
       await expect(
         page.locator('[data-testid="sidebar-logo-link"] img')
-      ).toHaveAttribute('src', /\/api\/upload\/artifacts\//);
+      ).toHaveAttribute('src', '/api/settings/branding/logo');
     });
 
     test('admin can upload a custom favicon', async ({ page }) => {
@@ -107,7 +105,7 @@ test.describe
       // The <link rel="icon"> href should point at the uploaded artifact
       await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
         'href',
-        /\/api\/upload\/artifacts\//
+        /\/api\/settings\/branding\/favicon$/
       );
     });
 

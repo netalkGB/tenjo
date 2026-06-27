@@ -1,5 +1,6 @@
 import {
   type ChatApiClient,
+  type ChatApiImageDetail,
   type ChatApiResponse,
   type ChatApiStatus,
   type ChatApiToolCallStreamEvent,
@@ -8,9 +9,7 @@ import {
 export type ToolCallStreamEvent = ChatApiToolCallStreamEvent;
 
 import { OpenAIChatApiClient } from './OpenAIChatApiClient';
-
-const QWEN_THINKING_START_TAG = '<think>';
-const QWEN_THINKING_END_TAG = '</think>';
+import { THINKING_CLOSE_TAG, THINKING_OPEN_TAG } from './thinkingUtils';
 
 export const MessageRole = {
   USER: 'user',
@@ -31,7 +30,7 @@ export interface MessageImageContent {
   type: 'image_url';
   image_url: {
     url: string;
-    detail?: 'auto' | 'high' | 'low';
+    detail?: ChatApiImageDetail;
   };
 }
 
@@ -87,6 +86,13 @@ export class ChatClient {
   public _messages: MessageRequest[] = [];
   private _pendingToolCalls: PendingToolCall[] = [];
   private abortController = new AbortController();
+  // Identity by default: the messages sent to the API equal the stored history.
+  // A consumer can install a transform (for example context compaction) to reshape the
+  // OUTGOING messages without mutating the persisted history. See
+  // setOutgoingMessageTransform.
+  private outgoingMessageTransform: (
+    messages: MessageRequest[]
+  ) => MessageRequest[] = (messages) => messages;
 
   constructor(chatApiClient: ChatApiClient) {
     this.chatApiClient = chatApiClient;
@@ -143,7 +149,7 @@ export class ChatClient {
 
     if (this.currentStatus === 'thinking') {
       this.thinkingHandler(msg);
-      const isThinkingEnd = state.contentBuffer.includes(QWEN_THINKING_END_TAG);
+      const isThinkingEnd = state.contentBuffer.includes(THINKING_CLOSE_TAG);
       if (isThinkingEnd) {
         state.contentBuffer = '';
         this.fireStatusHandler('message');
@@ -160,10 +166,10 @@ export class ChatClient {
     state.pendingChunks.push(msg);
 
     const isThinkingStart =
-      QWEN_THINKING_START_TAG.startsWith(state.contentBuffer) ||
-      state.contentBuffer.startsWith(QWEN_THINKING_START_TAG);
+      THINKING_OPEN_TAG.startsWith(state.contentBuffer) ||
+      state.contentBuffer.startsWith(THINKING_OPEN_TAG);
     if (isThinkingStart) {
-      if (state.contentBuffer.length < QWEN_THINKING_START_TAG.length) {
+      if (state.contentBuffer.length < THINKING_OPEN_TAG.length) {
         // Partial prefix match, keep buffering
         return;
       }
@@ -237,7 +243,7 @@ export class ChatClient {
       content: content,
     });
     const res = await this.chatApiClient.chatStream(
-      this._messages,
+      this.outgoingMessageTransform(this._messages),
       options.signal ?? this.abortController.signal
     );
     const assistantMessage = this.toMessageRequest(res);
@@ -314,10 +320,22 @@ export class ChatClient {
 
   public async validateToolCallResult(signal?: AbortSignal) {
     const res = await this.chatApiClient.validateToolCallResult(
-      this._messages,
+      this.outgoingMessageTransform(this._messages),
       signal ?? this.abortController.signal
     );
     this.addMessage(this.toMessageRequest(res));
+  }
+
+  /**
+   * Install a transform applied to the message history right before each API
+   * request (chatStream / validateToolCallResult). The stored history is left
+   * untouched — the transform only reshapes the OUTGOING copy. Use it for
+   * context-window compaction. Pass an identity function to reset.
+   */
+  public setOutgoingMessageTransform(
+    transform: (messages: MessageRequest[]) => MessageRequest[]
+  ): void {
+    this.outgoingMessageTransform = transform;
   }
 
   /**

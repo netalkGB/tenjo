@@ -27,7 +27,7 @@ async function main() {
       headless: true,
       headlessMode: 'new',
       userAgent: 'Tenjo Browser Agent',
-      requestDelay: { min: 500, max: 3000 },
+      requestDelay: { min: 100, max: 300 },
     },
   });
 

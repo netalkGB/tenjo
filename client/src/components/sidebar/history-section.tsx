@@ -61,7 +61,7 @@ export function HistorySection({ skeletonCount = 10 }: HistorySectionProps) {
               : histories.map((item, _index) => (
                   <ChatHistoryItem
                     key={item.id}
-                    title={item.title === '' ? '-' : item.title}
+                    title={item.title}
                     id={item.id}
                     pinned={item.pinned}
                   />

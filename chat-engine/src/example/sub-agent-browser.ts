@@ -62,7 +62,7 @@ async function main() {
       headless: true,
       headlessMode: 'new',
       userAgent: 'Tenjo Browser SubAgent',
-      requestDelay: { min: 500, max: 3000 },
+      requestDelay: { min: 100, max: 300 },
     },
   });
   subAgent.setEvents({

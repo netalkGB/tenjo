@@ -46,10 +46,13 @@ function createMockPool(imageFilenames: string[], knowledgePaths: string[]) {
   };
 }
 
-function createMockGlobalSettingRepo(cleaning = false) {
+function createMockGlobalSettingRepo(
+  cleaning = false,
+  initialSettings: Record<string, unknown> = {}
+) {
   const settingsState: Record<string, unknown> = cleaning
-    ? { cleaning: true }
-    : {};
+    ? { ...initialSettings, cleaning: true }
+    : { ...initialSettings };
 
   return {
     getSettings: vi.fn().mockImplementation(() => ({ ...settingsState })),
@@ -251,6 +254,95 @@ describe('FileCleanupService', () => {
       });
 
       expect(fs.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should not delete files referenced in branding settings', async () => {
+      const mockPool = createMockPool([], []);
+      const mockRepo = createMockGlobalSettingRepo(false, {
+        branding: {
+          logoFilename: 'logo.svg',
+          faviconFilename: 'favicon.png'
+        }
+      });
+
+      vi.mocked(fs.readdir).mockResolvedValue([
+        'logo.svg',
+        'favicon.png'
+      ] as unknown as Awaited<ReturnType<typeof fs.readdir>>);
+
+      const service = new FileCleanupService(
+        mockPool as never,
+        mockRepo as never
+      );
+      await service.startCleanup('user-1');
+
+      await vi.waitFor(() => {
+        const lastCall =
+          mockRepo.updateSettings.mock.calls[
+            mockRepo.updateSettings.mock.calls.length - 1
+          ];
+        expect(lastCall).toBeDefined();
+        expect(lastCall![0]).not.toHaveProperty('cleaning');
+      });
+
+      expect(fs.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should not delete recently uploaded orphaned files', async () => {
+      const mockPool = createMockPool([], []);
+      const mockRepo = createMockGlobalSettingRepo(false);
+
+      vi.mocked(fs.readdir).mockResolvedValue([
+        'fresh.png'
+      ] as unknown as Awaited<ReturnType<typeof fs.readdir>>);
+      vi.mocked(fs.stat).mockResolvedValue({
+        isFile: () => true,
+        size: 1024,
+        mtimeMs: Date.now()
+      } as Awaited<ReturnType<typeof fs.stat>>);
+
+      const service = new FileCleanupService(
+        mockPool as never,
+        mockRepo as never
+      );
+      await service.startCleanup('user-1');
+
+      await vi.waitFor(() => {
+        const lastCall =
+          mockRepo.updateSettings.mock.calls[
+            mockRepo.updateSettings.mock.calls.length - 1
+          ];
+        expect(lastCall).toBeDefined();
+        expect(lastCall![0]).not.toHaveProperty('cleaning');
+      });
+
+      expect(fs.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should delete old orphaned files', async () => {
+      const mockPool = createMockPool([], []);
+      const mockRepo = createMockGlobalSettingRepo(false);
+
+      vi.mocked(fs.readdir).mockResolvedValue(['old.png'] as unknown as Awaited<
+        ReturnType<typeof fs.readdir>
+      >);
+      vi.mocked(fs.stat).mockResolvedValue({
+        isFile: () => true,
+        size: 1024,
+        mtimeMs: Date.now() - 31 * 60 * 1000
+      } as Awaited<ReturnType<typeof fs.stat>>);
+
+      const service = new FileCleanupService(
+        mockPool as never,
+        mockRepo as never
+      );
+      await service.startCleanup('user-1');
+
+      await vi.waitFor(() => {
+        expect(fs.unlink).toHaveBeenCalledWith(
+          expect.stringContaining('old.png')
+        );
+      });
     });
 
     it('should handle empty artifacts directory gracefully', async () => {

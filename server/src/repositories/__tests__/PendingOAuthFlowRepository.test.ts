@@ -53,6 +53,8 @@ describe('PendingOAuthFlowRepository (Integration Tests)', () => {
       expect(loaded?.state_id).toBe(stateId);
       expect(loaded?.credential_id).toBe(credentialId);
       expect(loaded?.user_id).toBe(userId);
+      expect(loaded?.created_by).toBe(userId);
+      expect(loaded?.updated_by).toBe(userId);
     });
   });
 
@@ -74,7 +76,10 @@ describe('PendingOAuthFlowRepository (Integration Tests)', () => {
       expect(result?.state_id).toBe(stateId);
       expect(result?.credential_id).toBe(credentialId);
       expect(result?.user_id).toBe(userId);
+      expect(result?.created_by).toBe(userId);
+      expect(result?.updated_by).toBe(userId);
       expect(result?.created_at).toBeDefined();
+      expect(result?.updated_at).toBeDefined();
     });
   });
 

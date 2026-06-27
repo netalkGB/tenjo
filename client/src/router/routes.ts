@@ -2,6 +2,7 @@ import { createBrowserRouter, redirect } from 'react-router';
 import { ErrorFallback } from '@/components/error';
 import { fetchWhoami } from '@/api/server/whoami';
 import { getThreadMessages } from '@/api/server/chat';
+import { preloadAgentHomeRoute, preloadAgentTaskRoute } from './preloadRoutes';
 
 export const routes = createBrowserRouter([
   {
@@ -66,6 +67,25 @@ export const routes = createBrowserRouter([
                 threadId: params.id,
                 data: dataPromise
               };
+            }
+          }
+        ]
+      },
+      {
+        path: '/agent',
+        children: [
+          {
+            index: true,
+            lazy: async () => {
+              const { AgentHome } = await preloadAgentHomeRoute();
+              return { Component: AgentHome };
+            }
+          },
+          {
+            path: 'task/:id',
+            lazy: async () => {
+              const { AgentTaskPage } = await preloadAgentTaskRoute();
+              return { Component: AgentTaskPage };
             }
           }
         ]

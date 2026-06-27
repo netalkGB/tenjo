@@ -1,8 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 
 /**
- * Copies req.session.user onto req.user for backward compatibility.
- * Replaces passport.initialize() + passport.session().
+ * Copies req.session.user onto req.user for request handlers.
  */
 export const sessionUserMiddleware = (
   req: Request,

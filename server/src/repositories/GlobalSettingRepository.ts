@@ -1,7 +1,18 @@
 import { BaseRepository } from './BaseRepository';
 import type { McpServersConfig } from 'tenjo-chat-engine';
 
-export type ModelType = 'lmstudio' | 'ollama' | 'openai';
+export const MODEL_TYPES = [
+  'lmstudio',
+  'ollama',
+  'openai',
+  'openai-compatible'
+] as const;
+
+export type ModelType = (typeof MODEL_TYPES)[number];
+
+export function isModelType(value: string): value is ModelType {
+  return MODEL_TYPES.some((type) => type === value);
+}
 
 export interface ModelEntry {
   id: string;
@@ -53,6 +64,7 @@ export interface UserSettings {
   disabledMcpTools?: string[];
   executeCodeEnabled?: boolean;
   webSearchEnabled?: boolean;
+  webSearchExtendedTimeoutEnabled?: boolean;
 }
 
 interface GlobalSettingRow {
@@ -99,6 +111,22 @@ export class GlobalSettingRepository extends BaseRepository {
     await this.pool.query(
       `UPDATE "global_settings" SET "settings" = $1, "updated_by" = $2, "updated_at" = $3 WHERE "id" = $4`,
       [JSON.stringify(settings), updatedBy, new Date(), current.id]
+    );
+  }
+
+  async updateSettingSection<K extends keyof GlobalSettings>(
+    key: K,
+    value: GlobalSettings[K],
+    updatedBy: string
+  ): Promise<void> {
+    const current = await this.getOrCreateRow();
+    await this.pool.query(
+      `UPDATE "global_settings"
+       SET "settings" = jsonb_set(COALESCE("settings", '{}'::jsonb), $1, $2::jsonb, true),
+           "updated_by" = $3,
+           "updated_at" = $4
+       WHERE "id" = $5`,
+      [[key], JSON.stringify(value), updatedBy, new Date(), current.id]
     );
   }
 }

@@ -1,12 +1,20 @@
 import { BrandLogo } from '@/components/common/brand-logo';
 import { ChatInput } from '@/components/chat';
 import { useSettings } from '@/contexts/settings-context';
+import type { UploadProgress, UploadResponse } from '@/api/server/chat/upload';
 
 interface HeroSectionProps {
   onSendMessage: (text: string, imageUrls: string[]) => void;
+  uploadImageFile: (
+    file: File,
+    onProgress?: (progress: UploadProgress) => void
+  ) => Promise<UploadResponse>;
 }
 
-export function HeroSection({ onSendMessage }: HeroSectionProps) {
+export function HeroSection({
+  onSendMessage,
+  uploadImageFile
+}: HeroSectionProps) {
   const { selectedKnowledge, toggleKnowledge } = useSettings();
 
   return (
@@ -16,6 +24,7 @@ export function HeroSection({ onSendMessage }: HeroSectionProps) {
         <div className="mt-5 w-[90%] sm:w-full max-w-185">
           <ChatInput
             onSendMessage={onSendMessage}
+            uploadImageFile={uploadImageFile}
             selectedKnowledge={selectedKnowledge}
             onToggleKnowledge={toggleKnowledge}
           />

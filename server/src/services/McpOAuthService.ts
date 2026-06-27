@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { McpOAuthClientProvider } from 'tenjo-chat-engine';
 import type { GlobalSettingService } from './GlobalSettingService';
@@ -6,6 +5,7 @@ import type { CredentialStoreService } from './CredentialStoreService';
 import type { PendingOAuthFlowService } from './PendingOAuthFlowService';
 import { ServiceError } from '../errors/ServiceError';
 import { getAppName, getOAuthRedirectUrl } from '../utils/env';
+import { generateUuidV4 } from '../utils/generateUuidV4';
 import logger from '../logger';
 
 /** Shape of the OAuth token data persisted in credential_store. */
@@ -109,7 +109,7 @@ export class McpOAuthService {
       throw new McpOAuthError('Failed to get authorization URL');
     }
 
-    const stateId = crypto.randomUUID();
+    const stateId = generateUuidV4();
 
     // Persist flow data (encrypted) in DB including OAuth state from provider
     const clientInfo = provider.clientInformation();

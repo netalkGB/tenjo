@@ -34,9 +34,11 @@ export interface ChatApiMessageImageContent {
   type: 'image_url';
   image_url: {
     url: string;
-    detail?: 'auto' | 'high' | 'low';
+    detail?: ChatApiImageDetail;
   };
 }
+
+export type ChatApiImageDetail = 'auto' | 'high' | 'low';
 
 export interface ChatApiMessageRequest {
   role: string;

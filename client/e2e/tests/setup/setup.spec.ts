@@ -3,6 +3,9 @@ import {
   ADMIN_FULL_NAME,
   ADMIN_USER_NAME,
   ADMIN_PASSWORD,
+  AGENT_ADMIN_FULL_NAME,
+  AGENT_ADMIN_USER_NAME,
+  AGENT_ADMIN_PASSWORD,
   NORMAL_FULL_NAME,
   NORMAL_USER_NAME,
   NORMAL_PASSWORD,
@@ -48,6 +51,19 @@ test.describe
           fullName: NORMAL_FULL_NAME,
           userName: NORMAL_USER_NAME,
           password: NORMAL_PASSWORD
+        }
+      );
+    });
+
+    test('create agent admin user', async ({ page }) => {
+      await createUserViaInvitation(
+        page,
+        { userName: ADMIN_USER_NAME, password: ADMIN_PASSWORD },
+        {
+          fullName: AGENT_ADMIN_FULL_NAME,
+          userName: AGENT_ADMIN_USER_NAME,
+          password: AGENT_ADMIN_PASSWORD,
+          role: 'admin'
         }
       );
     });

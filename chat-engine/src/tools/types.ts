@@ -1,11 +1,23 @@
 import type { ToolDefinitionRequest } from '../OpenAIChatApiClient';
+import { DuplicateToolNameError } from './errors.js';
+
+/**
+ * Per-call execution context handed to a tool handler. Currently carries the
+ * turn's abort signal so a long-running tool (for example bash) is killed the instant
+ * the user stops the agent, instead of running to completion first.
+ */
+export interface ToolExecContext {
+  signal?: AbortSignal;
+}
 
 /**
  * Local tool handler shape: receives parsed JSON arguments from a tool call
- * and returns the result fed back to the LLM via addToolCallResult.
+ * (and an optional execution context) and returns the result fed back to the
+ * LLM via addToolCallResult.
  */
 export type LocalToolHandler = (
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  context?: ToolExecContext
 ) => Promise<unknown>;
 
 /**
@@ -35,7 +47,7 @@ export function bundleTools(tools: Tool[]): BundledTools {
   for (const tool of tools) {
     const name = tool.definition.function.name;
     if (handlers.has(name)) {
-      throw new Error(`Duplicate tool name: ${name}`);
+      throw new DuplicateToolNameError(name);
     }
     handlers.set(name, tool.handler);
   }

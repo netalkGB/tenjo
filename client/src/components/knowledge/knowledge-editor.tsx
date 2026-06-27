@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 import { KNOWLEDGE_MAX_FILE_SIZE } from '@/lib/knowledgeConstants';
+import { formatFileSize } from '@/lib/formatFileSize';
 
 interface KnowledgeEditorProps {
   initialName: string;
@@ -41,11 +42,6 @@ export function KnowledgeEditor({
     }
   };
 
-  const formatSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  };
-
   return (
     <div className="flex flex-col h-full gap-3">
       <Input
@@ -71,7 +67,8 @@ export function KnowledgeEditor({
         <span
           className={`text-xs ${isOverLimit ? 'text-destructive font-medium' : 'text-muted-foreground'}`}
         >
-          {formatSize(contentBytes)} / {formatSize(KNOWLEDGE_MAX_FILE_SIZE)}
+          {formatFileSize(contentBytes)} /{' '}
+          {formatFileSize(KNOWLEDGE_MAX_FILE_SIZE)}
           {isOverLimit && ` — ${t('knowledge_file_too_large')}`}
         </span>
         <div className="flex gap-2">

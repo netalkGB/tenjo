@@ -448,7 +448,9 @@ describe('MessageRepository (Integration Tests)', () => {
             { type: 'text', text: 'hello' },
             {
               type: 'image_url',
-              image_url: { url: '/api/upload/artifacts/img1.jpg' }
+              image_url: {
+                url: '/api/chat/threads/thread-1/artifacts/img1.jpg'
+              }
             }
           ]
         },
@@ -463,7 +465,9 @@ describe('MessageRepository (Integration Tests)', () => {
           content: [
             {
               type: 'image_url',
-              image_url: { url: '/api/upload/artifacts/img2.png' }
+              image_url: {
+                url: '/api/chat/threads/thread-1/artifacts/img2.png'
+              }
             }
           ]
         },
@@ -477,6 +481,30 @@ describe('MessageRepository (Integration Tests)', () => {
       expect(filenames.sort()).toEqual(['img1.jpg', 'img2.png']);
     });
 
+    it('should extract image filenames from legacy artifact URLs', async () => {
+      await messageRepository.create({
+        thread_id: testThreadId,
+        parent_message_id: null,
+        data: {
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: '/api/upload/artifacts/legacy.jpg'
+              }
+            }
+          ]
+        },
+        source: 'user',
+        created_by: testUserId,
+        updated_by: testUserId
+      });
+
+      const filenames =
+        await messageRepository.getImageFilenamesByThreadId(testThreadId);
+      expect(filenames).toEqual(['legacy.jpg']);
+    });
+
     it('should return distinct filenames even if same image is referenced multiple times', async () => {
       await messageRepository.create({
         thread_id: testThreadId,
@@ -485,7 +513,9 @@ describe('MessageRepository (Integration Tests)', () => {
           content: [
             {
               type: 'image_url',
-              image_url: { url: '/api/upload/artifacts/same.jpg' }
+              image_url: {
+                url: '/api/chat/threads/thread-1/artifacts/same.jpg'
+              }
             }
           ]
         },
@@ -500,7 +530,9 @@ describe('MessageRepository (Integration Tests)', () => {
           content: [
             {
               type: 'image_url',
-              image_url: { url: '/api/upload/artifacts/same.jpg' }
+              image_url: {
+                url: '/api/chat/threads/thread-1/artifacts/same.jpg'
+              }
             }
           ]
         },
@@ -528,7 +560,9 @@ describe('MessageRepository (Integration Tests)', () => {
           content: [
             {
               type: 'image_url',
-              image_url: { url: '/api/upload/artifacts/thread1.jpg' }
+              image_url: {
+                url: '/api/chat/threads/thread-1/artifacts/thread1.jpg'
+              }
             }
           ]
         },
@@ -543,7 +577,9 @@ describe('MessageRepository (Integration Tests)', () => {
           content: [
             {
               type: 'image_url',
-              image_url: { url: '/api/upload/artifacts/thread2.jpg' }
+              image_url: {
+                url: '/api/chat/threads/thread-1/artifacts/thread2.jpg'
+              }
             }
           ]
         },

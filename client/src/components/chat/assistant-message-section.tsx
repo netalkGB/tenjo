@@ -7,22 +7,15 @@ import type { SubAgentActivityInfo } from './sub-agent-activity';
 import { ThinkingBlock } from './thinking-block';
 import { Skeleton } from '@/components/ui/skeleton';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { formatProviderLabel } from '@/lib/providerLabels';
 import type { MessagePart } from '@/state/chatTypes';
 
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  lmstudio: 'LM Studio',
-  ollama: 'Ollama',
-  openai: 'OpenAI'
-};
-
-function formatModelLabel(
+function formatAssistantModelLabel(
   model?: string | null,
   provider?: string | null
 ): string {
   if (!model) return '-';
-  const providerLabel = provider
-    ? (PROVIDER_DISPLAY_NAMES[provider] ?? provider)
-    : null;
+  const providerLabel = provider ? formatProviderLabel(provider) : null;
   return providerLabel ? `${providerLabel} / ${model}` : model;
 }
 
@@ -95,7 +88,7 @@ export function AssistantMessageSection({
   return (
     <>
       <span className="text-xs text-muted-foreground">
-        {formatModelLabel(modelName, providerType)}
+        {formatAssistantModelLabel(modelName, providerType)}
       </span>
       {thinkingContent && (
         <ThinkingBlock

@@ -333,6 +333,14 @@ export class BrowserResearchAgent {
             softTimedOut = true;
           }, this.timeoutMs * SOFT_DEADLINE_FRACTION)
         : undefined;
+    // Number of tool handlers that have actually executed this task. The soft
+    // deadline must NOT reject a tool call until at least one real research
+    // action has run — otherwise a slow reasoning model that spends its whole
+    // soft-budget *thinking* before its first search gets that first search
+    // rejected with a "time budget spent" error, leaving it confused and
+    // unable to answer (it never gathered anything). Always let the model take
+    // its first action; only then start pushing it to wrap up.
+    let executedToolCount = 0;
     const isAbortError = (err: unknown): boolean =>
       timedOut ||
       (err instanceof Error &&
@@ -375,8 +383,10 @@ export class BrowserResearchAgent {
           // Past the soft deadline: reject every not-yet-started tool call
           // with a wrap-up instruction. Tools already running finish on
           // their own; this just stops new research and makes the model
-          // commit to an answer with the time that remains.
-          if (softTimedOut) {
+          // commit to an answer with the time that remains. Skipped until the
+          // model has run at least one tool, so it is never told to "stop
+          // researching" before it has researched anything at all.
+          if (softTimedOut && executedToolCount > 0) {
             this.client.addToolCallResult(toolCall.id, {
               error:
                 'TIME BUDGET nearly spent — stop researching now. Do NOT call any more tools. Write your final answer to the user immediately using the information you have already gathered, and cite the URLs you visited. If the answer is still incomplete, give your best partial answer and briefly state what remains uncertain.',
@@ -401,6 +411,7 @@ export class BrowserResearchAgent {
 
           this.events.onToolStart?.(name, parsed);
           const result = await handler(parsed);
+          executedToolCount++;
           const resultJson = JSON.stringify(result);
           this.events.onToolEnd?.(name, parsed, result, resultJson);
           this.client.addToolCallResult(toolCall.id, result);

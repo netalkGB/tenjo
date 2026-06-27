@@ -244,6 +244,66 @@ describe('KnowledgeService', () => {
     });
   });
 
+  describe('copyToArtifacts', () => {
+    it('should save each owned entry as a NEW artifact and return refs', async () => {
+      const entries = [
+        makeKnowledge({ id: 'k-1', name: 'a.txt', fs_path: '/path/a.txt' }),
+        makeKnowledge({ id: 'k-2', name: 'b.txt', fs_path: '/path/b.txt' })
+      ];
+      mockRepo.findByIds.mockResolvedValue(entries);
+      mockFileUploadService.readText
+        .mockResolvedValueOnce('content A')
+        .mockResolvedValueOnce('content B');
+
+      const result = await service.copyToArtifacts(['k-1', 'k-2'], USER_ID);
+
+      expect(result).toEqual([
+        { ref: 'test-uuid-1234.txt', name: 'a.txt' },
+        { ref: 'test-uuid-1234.txt', name: 'b.txt' }
+      ]);
+      // A copy is written; the knowledge's own backing file is never the ref
+      // (the agent pipeline deletes the artifact after materializing it).
+      expect(mockFileUploadService.save).toHaveBeenCalledWith(
+        'test-uuid-1234.txt',
+        'content A',
+        'utf-8'
+      );
+      expect(mockFileUploadService.save).toHaveBeenCalledWith(
+        'test-uuid-1234.txt',
+        'content B',
+        'utf-8'
+      );
+      expect(result.every((file) => file.ref !== 'a.txt')).toBe(true);
+    });
+
+    it('should exclude entries not owned by the user', async () => {
+      const entries = [
+        makeKnowledge({ id: 'k-1', name: 'mine.txt' }),
+        makeKnowledge({
+          id: 'k-2',
+          name: 'theirs.txt',
+          created_by: OTHER_USER_ID
+        })
+      ];
+      mockRepo.findByIds.mockResolvedValue(entries);
+      mockFileUploadService.readText.mockResolvedValueOnce('my content');
+
+      const result = await service.copyToArtifacts(['k-1', 'k-2'], USER_ID);
+
+      expect(result).toEqual([{ ref: 'test-uuid-1234.txt', name: 'mine.txt' }]);
+      expect(mockFileUploadService.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return an empty array when no ids resolve', async () => {
+      mockRepo.findByIds.mockResolvedValue([]);
+
+      const result = await service.copyToArtifacts(['missing'], USER_ID);
+
+      expect(result).toEqual([]);
+      expect(mockFileUploadService.save).not.toHaveBeenCalled();
+    });
+  });
+
   describe('create', () => {
     it('should create knowledge entry and save file via FileUploadService', async () => {
       const created = makeKnowledge({
