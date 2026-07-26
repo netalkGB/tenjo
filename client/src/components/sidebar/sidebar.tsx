@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Settings as SettingsIcon, BookOpen } from 'lucide-react';
+import { Settings as SettingsIcon, BookOpen, Zap } from 'lucide-react';
 import {
   Sidebar as SidebarRoot,
   SidebarContent,
@@ -36,6 +36,23 @@ function KnowledgeButton() {
       >
         <BookOpen className="size-4" />
         <span>{t('knowledge')}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function PunchButton() {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        className="cursor-pointer"
+        onClick={() => navigate('/punch')}
+        data-testid="sidebar-punch-button"
+      >
+        <Zap className="size-4" />
+        <span>{t('punch')}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -78,6 +95,7 @@ function AgentMenu() {
     <SidebarMenu>
       <NewAgentTaskButton />
       <KnowledgeButton />
+      <PunchButton />
       <AgentPinnedSection />
       <AgentHistorySection />
     </SidebarMenu>

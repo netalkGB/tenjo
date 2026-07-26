@@ -1,5 +1,6 @@
 import { createBrowserRouter, redirect } from 'react-router';
 import { ErrorFallback } from '@/components/error';
+import { ApiError } from '@/api/errors/ApiError';
 import { fetchWhoami } from '@/api/server/whoami';
 import { getThreadMessages } from '@/api/server/chat';
 import { preloadAgentHomeRoute, preloadAgentTaskRoute } from './preloadRoutes';
@@ -48,6 +49,13 @@ export const routes = createBrowserRouter([
         }
       },
       {
+        path: '/punch',
+        lazy: async () => {
+          const { Punch } = await import('@/pages/main/punch');
+          return { Component: Punch };
+        }
+      },
+      {
         path: '/chat',
         children: [
           {
@@ -58,15 +66,31 @@ export const routes = createBrowserRouter([
             },
             loader: async ({ params }) => {
               if (!params.id) {
-                throw new Error('Thread ID is required');
+                throw new Response('Not Found', { status: 404 });
               }
-
-              // Return the Promise as-is (do not await).
-              const dataPromise = getThreadMessages(params.id);
-              return {
-                threadId: params.id,
-                data: dataPromise
-              };
+              try {
+                const data = await getThreadMessages(params.id);
+                return {
+                  threadId: params.id,
+                  data
+                };
+              } catch (error) {
+                if (error instanceof ApiError) {
+                  // Missing thread or unusable id → full-page Not Found
+                  const status =
+                    error.code === 404 ||
+                    error.code === 400 ||
+                    error.code === null ||
+                    (error.code !== null && error.code >= 500)
+                      ? 404
+                      : error.code;
+                  throw new Response(
+                    status === 404 ? 'Not Found' : error.message || 'Error',
+                    { status }
+                  );
+                }
+                throw error;
+              }
             }
           }
         ]

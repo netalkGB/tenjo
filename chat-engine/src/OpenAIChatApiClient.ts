@@ -30,8 +30,7 @@ export interface ToolCallResponse {
 }
 
 export type ChatCompletionMessageContent =
-  | ChatCompletionMessageTextContent
-  | ChatCompletionMessageImageContent;
+  ChatCompletionMessageTextContent | ChatCompletionMessageImageContent;
 
 export interface ChatCompletionMessageTextContent {
   type: 'text';

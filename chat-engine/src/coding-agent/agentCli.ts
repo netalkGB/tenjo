@@ -287,7 +287,7 @@ export async function runCodingAgentCli(
       if (!handler) {
         return { approved: true, result: { error: `Unknown tool: ${name}` } };
       }
-      let parsed: Record<string, unknown> = {};
+      let parsed: Record<string, unknown>;
       try {
         parsed = rawArgs ? JSON.parse(rawArgs) : {};
       } catch {

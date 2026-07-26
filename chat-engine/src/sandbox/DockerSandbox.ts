@@ -2,6 +2,9 @@ import { spawn } from 'node:child_process';
 import { jailRelative } from './pathJail.js';
 import {
   DEFAULT_SNAPSHOT_EXCLUDE,
+  SANDBOX_SKILLS_DIR,
+  isUnderAbsoluteRoot,
+  normalizePosixAbsolute,
   type Sandbox,
   type ExecResult,
   type ExecOptions,
@@ -91,6 +94,71 @@ export class DockerSandbox implements Sandbox {
 
   getWorkspaceDir(): string {
     return this.podWorkspaceDir;
+  }
+
+  /** Skills root inside the project pod — outside `/workspace`. */
+  getSkillsRoot(): string {
+    return SANDBOX_SKILLS_DIR;
+  }
+
+  /**
+   * Materialize a skill file into the project pod at an absolute path under
+   * {@link SANDBOX_SKILLS_DIR}. Does not touch the workspace volume.
+   */
+  async writeOutsideWorkspace(
+    absolutePath: string,
+    content: Buffer
+  ): Promise<{ bytesWritten: number }> {
+    const root = this.getSkillsRoot();
+    let target: string;
+    try {
+      target = normalizePosixAbsolute(absolutePath);
+    } catch {
+      throw new SandboxFileOperationError(
+        'write',
+        absolutePath,
+        `invalid absolute path: ${absolutePath}`
+      );
+    }
+    if (!isUnderAbsoluteRoot(root, target)) {
+      throw new SandboxFileOperationError(
+        'write',
+        absolutePath,
+        `path escapes skills root: ${absolutePath}`
+      );
+    }
+    const result = await runDocker(
+      buildPodmanExecArgs(
+        this.containerName,
+        this.mode,
+        [
+          'exec',
+          '-i',
+          this.projectContainerName,
+          'sh',
+          '-c',
+          'mkdir -p "$(dirname -- "$0")" && base64 -d > "$0"',
+          target,
+        ],
+        { interactive: true }
+      ),
+      {
+        dockerPath: this.dockerPath,
+        input: content.toString('base64'),
+        timeoutMs: this.defaultTimeoutMs,
+      }
+    );
+    if (result.spawnError) {
+      throw new SandboxCommandError(`docker exec failed: ${result.spawnError}`);
+    }
+    if (!ok(result)) {
+      throw new SandboxFileOperationError(
+        'write',
+        absolutePath,
+        result.stderr.trim() || `cannot write ${absolutePath}`
+      );
+    }
+    return { bytesWritten: content.length };
   }
 
   private toHostPath(podAbs: string): string {

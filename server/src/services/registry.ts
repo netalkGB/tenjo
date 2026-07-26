@@ -4,7 +4,8 @@ import {
   pendingOAuthFlowRepo,
   knowledgeRepo,
   agentProjectRepo,
-  userRepo
+  userRepo,
+  punchSkillRepo
 } from '../repositories/registry';
 import { pool } from '../db/client';
 import { GlobalSettingService } from './GlobalSettingService';
@@ -19,6 +20,7 @@ import { FileCleanupService } from './FileCleanupService';
 import { AgentProjectService } from './AgentProjectService';
 import { UserService } from './UserService';
 import { ArtifactAccessService } from './ArtifactAccessService';
+import { PunchSkillService } from './PunchSkillService';
 import { agentGuiService } from './AgentGuiService';
 import { agentEventBus } from '../events/AgentEventBus';
 import { questionEmitter } from '../events/QuestionEmitter';
@@ -49,9 +51,14 @@ export const knowledgeService = new KnowledgeService(
   knowledgeRepo,
   fileUploadService
 );
+export const punchSkillService = new PunchSkillService(
+  punchSkillRepo,
+  fileUploadService
+);
 export const fileCleanupService = new FileCleanupService(
   pool,
-  globalSettingRepo
+  globalSettingRepo,
+  punchSkillService
 );
 export const agentProjectService = new AgentProjectService(agentProjectRepo);
 export const userService = new UserService(userRepo);

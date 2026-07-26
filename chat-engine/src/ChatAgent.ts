@@ -18,13 +18,18 @@ export interface AgentToolCall {
   };
 }
 
+/**
+ * Host-requested tool call to run after the user message and before the model,
+ * through the same executeTool path as model-initiated calls.
+ */
+export interface ForcedToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
 /** Lifecycle status of a queued prompt. */
 export type QueuedItemStatus =
-  | 'queued'
-  | 'running'
-  | 'done'
-  | 'error'
-  | 'aborted';
+  'queued' | 'running' | 'done' | 'error' | 'aborted';
 
 /** A user prompt tracked by the queue. */
 export interface QueuedItem {
@@ -34,6 +39,11 @@ export interface QueuedItem {
   text: string;
   /** Image URLs/paths passed through to ChatClient.sendMessage. */
   imageUrls?: string[];
+  /**
+   * Tools the host forces after this user message, before the model runs
+   * (for example Punch slash force-load). Executed via executeTool.
+   */
+  forcedToolCalls?: ForcedToolCall[];
   status: QueuedItemStatus;
   /** Populated when status === 'error'. */
   error?: Error;
@@ -76,8 +86,7 @@ export interface TextOnlyNudgeContext {
 }
 
 export type TextOnlyNudgeInstruction =
-  | string
-  | ((context: TextOnlyNudgeContext) => string | null);
+  string | ((context: TextOnlyNudgeContext) => string | null);
 
 export interface ChatAgentOptions {
   /** Executes and optionally approves a single tool call. */
@@ -238,11 +247,16 @@ export class ChatAgent {
     this.beforeTurn = options.beforeTurn ?? null;
   }
 
-  public submit(message: string, imageUrls?: string[]): string {
+  public submit(
+    message: string,
+    imageUrls?: string[],
+    options?: { forcedToolCalls?: ForcedToolCall[] }
+  ): string {
     const item: QueuedItem = {
       id: randomUUID(),
       text: message,
       imageUrls,
+      forcedToolCalls: options?.forcedToolCalls,
       status: 'queued',
       enqueuedAt: Date.now(),
     };
@@ -273,7 +287,12 @@ export class ChatAgent {
   public restoreQueue(
     items: Array<
       Pick<QueuedItem, 'text'> &
-        Partial<Pick<QueuedItem, 'id' | 'imageUrls' | 'enqueuedAt'>>
+        Partial<
+          Pick<
+            QueuedItem,
+            'id' | 'imageUrls' | 'enqueuedAt' | 'forcedToolCalls'
+          >
+        >
     >
   ): string[] {
     const ids: string[] = [];
@@ -282,6 +301,7 @@ export class ChatAgent {
         id: source.id ?? randomUUID(),
         text: source.text,
         imageUrls: source.imageUrls,
+        forcedToolCalls: source.forcedToolCalls,
         status: 'queued',
         enqueuedAt: source.enqueuedAt ?? Date.now(),
       };
@@ -519,12 +539,30 @@ export class ChatAgent {
       .filter((value) => value.length > 0)
       .join(this.coalesceSeparator);
     const imageUrls = batch.flatMap((item) => item.imageUrls ?? []);
+    const forcedToolCalls = batch.flatMap((item) => item.forcedToolCalls ?? []);
 
-    await this.client.sendMessage(
-      text,
-      imageUrls.length > 0 ? imageUrls : undefined,
-      { requireToolApproval: this.requireToolApproval, signal }
-    );
+    if (forcedToolCalls.length > 0) {
+      // Host-forced tools share the real executeTool path with model calls.
+      this.client.appendUserMessage(
+        text,
+        imageUrls.length > 0 ? imageUrls : undefined
+      );
+      const planned = this.client.appendAssistantToolCalls(forcedToolCalls);
+      const rejected = await this.runToolBatch(planned, itemIds, signal);
+      if (rejected) {
+        return { assistantMessage: this.getLastAssistantMessage() };
+      }
+      await this.client.validateToolCallResult(signal);
+    } else {
+      await this.client.sendMessage(
+        text,
+        imageUrls.length > 0 ? imageUrls : undefined,
+        {
+          requireToolApproval: this.requireToolApproval,
+          signal,
+        }
+      );
+    }
 
     let iteration = 0;
     let emptyContinues = 0;

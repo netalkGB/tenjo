@@ -4,6 +4,8 @@ import { getDataDir } from '../utils/env';
 import type { Pool } from 'pg';
 import type { GlobalSettingRepository } from '../repositories/GlobalSettingRepository';
 import logger from '../logger';
+import { sandboxManager, isAgentSandboxUsable } from './AgentSandboxService';
+import type { PunchSkillService } from './PunchSkillService';
 
 function getArtifactsDir(): string {
   return path.join(getDataDir(), 'artifacts');
@@ -31,7 +33,8 @@ export interface CleanupStatus {
 export class FileCleanupService {
   constructor(
     private readonly pool: Pool,
-    private readonly globalSettingRepo: GlobalSettingRepository
+    private readonly globalSettingRepo: GlobalSettingRepository,
+    private readonly punchSkillService?: PunchSkillService
   ) {}
 
   /**
@@ -102,6 +105,19 @@ export class FileCleanupService {
       }
 
       logger.info('File cleanup completed', { deletedCount, deletedSizeBytes });
+
+      if (isAgentSandboxUsable()) {
+        try {
+          const projectResult = await this.pool.query<{ id: string }>(
+            'SELECT id FROM "agent_project"'
+          );
+          const knownProjectIds = projectResult.rows.map((row) => row.id);
+          await sandboxManager.reapOrphans(knownProjectIds);
+          logger.info('Sandbox orphans cleanup completed');
+        } catch (err) {
+          logger.warn('Failed to cleanup sandbox orphans', { error: err });
+        }
+      }
     } finally {
       // Clear cleaning flag
       const settings = await this.globalSettingRepo.getOrCreateSettings();
@@ -143,6 +159,12 @@ export class FileCleanupService {
 
     for (const row of knowledgeResult.rows) {
       addFilename(referenced, row.fs_path);
+    }
+
+    if (this.punchSkillService) {
+      for (const fsPath of await this.punchSkillService.listStoredFsPaths()) {
+        addFilename(referenced, fsPath);
+      }
     }
 
     // Extract branding filenames (logo, favicon) from global_settings

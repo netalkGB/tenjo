@@ -1,6 +1,6 @@
 {
   "name": "tenjo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "workspaces": [
     "client",
     "server",
@@ -14,10 +14,13 @@
     "start": "npm start --prefix server",
     "migrate": "npm run migrate --prefix server",
     "setup": "npm ci && npm -w chat-engine run setup:browser-deps",
+    "audit": "npm audit --workspaces --include-workspace-root",
     "license-report": "node scripts/generate-license-report.mjs"
   },
   "devDependencies": {
     "cross-spawn": "^7.0.6",
-    "license-checker-rseidelsohn": "^4.4.2"
+    "esbuild": "^0.28.1",
+    "eslint": "^10.8.0",
+    "license-checker-rseidelsohn": "^5.0.1"
   }
 }

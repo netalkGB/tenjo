@@ -26,6 +26,7 @@ import {
   type AgentServerEvent,
   type ContextFileRef
 } from '@/api/server/agent';
+import { ApiError } from '@/api/errors/ApiError';
 import { upsertToolApprovalRule } from '@/api/server/settings';
 import type { AgentMode } from '@/components/agent/types';
 import {
@@ -41,6 +42,8 @@ import {
 
 interface AgentContextValue {
   state: AgentState;
+  /** True when GET /projects/:id returned 404. */
+  notFound: boolean;
   submit: (
     text: string,
     mode: AgentMode,
@@ -100,6 +103,7 @@ export function AgentProvider({
    * turn starts); see the AgentContextValue.submitting doc.
    */
   const [submitting, setSubmitting] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const highlightTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map()
@@ -334,7 +338,10 @@ export function AgentProvider({
     }
   };
 
-  const { connection } = useAgentEvents(projectId, handleEvent);
+  const { connection } = useAgentEvents(
+    notFound ? undefined : projectId,
+    handleEvent
+  );
 
   useEffect(() => {
     dispatch({ type: 'connection', connection });
@@ -362,8 +369,20 @@ export function AgentProvider({
           agentModel: data.project.agentModel,
           title: data.project.title
         });
-      } catch {
-        // The page still works for a brand-new project with no history.
+      } catch (error) {
+        // Treat only HTTP 404 as a missing project.
+        if (error instanceof ApiError && error.code === 404) {
+          setNotFound(true);
+          return;
+        }
+        openDialog({
+          title: t('error'),
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : t('error_agent_project_load'),
+          type: 'ok'
+        });
       }
     };
     load();
@@ -546,6 +565,7 @@ export function AgentProvider({
     <AgentContext.Provider
       value={{
         state,
+        notFound,
         submit,
         submitting,
         approve,

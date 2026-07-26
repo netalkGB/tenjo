@@ -5,7 +5,8 @@ import {
   Hand,
   ListChecks,
   Lock,
-  Paperclip
+  Paperclip,
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +23,12 @@ import { formatModelLabel } from '@/lib/providerLabels';
 import { useTranslation } from '@/hooks/useTranslation';
 import { validateImageFile } from '@/api/server/chat/upload';
 import { uploadContextFile, type ContextFileRef } from '@/api/server/agent';
+import {
+  listEnabledPunchSkills,
+  type PunchEnabledSkill
+} from '@/api/server/punch';
 import { generateRandomId } from '@/lib/generateRandomId';
+import { getSlashQueryAtCursor } from '@/lib/punchSlash';
 import { AgentOptionsMenu } from './agent-options-menu';
 import { AttachmentPreviewList } from '@/components/common/attachment-preview-list';
 import type { AgentMode } from './types';
@@ -87,12 +93,37 @@ export function AgentPromptInput({
   // The agent starts in plan mode; switches to steer once a plan is approved.
   const [internalMode, setInternalMode] = useState<AgentMode>('plan');
   const mode = controlledMode ?? internalMode;
+  const [punchSkills, setPunchSkills] = useState<PunchEnabledSkill[]>([]);
+  const [slashMenu, setSlashMenu] = useState<{
+    start: number;
+    query: string;
+    activeIndex: number;
+  } | null>(null);
 
   const handleModeChange = (next: AgentMode) => {
     if (controlledMode === undefined) {
       setInternalMode(next);
     }
     onModeChange?.(next);
+  };
+
+  const updateSlashMenu = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setSlashMenu(null);
+      return;
+    }
+    const cursor = textarea.selectionStart ?? textarea.value.length;
+    const detected = getSlashQueryAtCursor(textarea.value, cursor);
+    if (!detected || punchSkills.length === 0) {
+      setSlashMenu(null);
+      return;
+    }
+    setSlashMenu({
+      start: detected.start,
+      query: detected.query,
+      activeIndex: 0
+    });
   };
 
   const handleInput = () => {
@@ -103,13 +134,42 @@ export function AgentPromptInput({
       parseFloat(getComputedStyle(document.documentElement).fontSize) * 10;
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    updateSlashMenu();
+  };
+
+  const loadPunchSkills = () => {
+    void listEnabledPunchSkills()
+      .then(skills => setPunchSkills(skills))
+      .catch(() => {
+        // Autocomplete is optional; ignore failures.
+      });
   };
 
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
     handleInput();
+    loadPunchSkills();
   });
+
+  const filteredSlashSkills = slashMenu
+    ? punchSkills.filter(s => s.name.startsWith(slashMenu.query))
+    : [];
+
+  const applySlashSkill = (skillName: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea || !slashMenu) return;
+    const value = textarea.value;
+    const before = value.slice(0, slashMenu.start);
+    const after = value.slice(textarea.selectionStart ?? value.length);
+    const next = `${before}/${skillName} ${after.replace(/^\s*/, '')}`;
+    textarea.value = next;
+    const cursor = before.length + skillName.length + 2;
+    textarea.setSelectionRange(cursor, cursor);
+    setSlashMenu(null);
+    handleInput();
+    textarea.focus();
+  };
 
   // Revoke any outstanding preview object URLs on unmount to avoid leaks.
   const filesRef = useRef(files);
@@ -144,8 +204,9 @@ export function AgentPromptInput({
       return;
     }
 
+    const raw = prompt.trim();
     onSubmit(
-      prompt.trim(),
+      raw,
       files.map(f => f.file),
       files.flatMap(f => (f.contextFile ? [f.contextFile] : [])),
       [...selectedKnowledge]
@@ -154,6 +215,7 @@ export function AgentPromptInput({
       textarea.value = '';
     }
     setText('');
+    setSlashMenu(null);
     files.forEach(f => {
       if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
     });
@@ -162,6 +224,54 @@ export function AgentPromptInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashMenu && filteredSlashSkills.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashMenu(prev =>
+          prev
+            ? {
+                ...prev,
+                activeIndex: (prev.activeIndex + 1) % filteredSlashSkills.length
+              }
+            : prev
+        );
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashMenu(prev =>
+          prev
+            ? {
+                ...prev,
+                activeIndex:
+                  (prev.activeIndex - 1 + filteredSlashSkills.length) %
+                  filteredSlashSkills.length
+              }
+            : prev
+        );
+        return;
+      }
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const skill =
+          filteredSlashSkills[slashMenu.activeIndex] ?? filteredSlashSkills[0];
+        if (skill) applySlashSkill(skill.name);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSlashMenu(null);
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const skill =
+          filteredSlashSkills[slashMenu.activeIndex] ?? filteredSlashSkills[0];
+        if (skill) applySlashSkill(skill.name);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSubmit();
@@ -309,7 +419,7 @@ export function AgentPromptInput({
         removeTestIdPrefix="agent-prompt-file-remove"
       />
 
-      <div>
+      <div className="relative">
         <textarea
           ref={textareaRef}
           placeholder={t(placeholderKey)}
@@ -317,9 +427,46 @@ export function AgentPromptInput({
           data-testid="agent-prompt-textarea"
           onInput={handleInput}
           onKeyDown={handleKeyDown}
+          onClick={updateSlashMenu}
+          onSelect={updateSlashMenu}
+          onFocus={() => {
+            loadPunchSkills();
+            updateSlashMenu();
+          }}
           onPaste={handlePaste}
           rows={1}
         />
+        {slashMenu && filteredSlashSkills.length > 0 && (
+          <div
+            className="absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full max-w-md overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
+            data-testid="agent-punch-slash-menu"
+          >
+            {filteredSlashSkills.map((skill, index) => (
+              <button
+                key={skill.name}
+                type="button"
+                className={`flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm ${
+                  index === slashMenu.activeIndex
+                    ? 'bg-accent text-accent-foreground'
+                    : 'hover:bg-muted'
+                }`}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  applySlashSkill(skill.name);
+                }}
+                data-testid={`agent-punch-slash-item-${skill.name}`}
+              >
+                <Zap className="mt-0.5 size-3.5 shrink-0" />
+                <span className="min-w-0">
+                  <span className="font-medium">/{skill.name}</span>
+                  <span className="mt-0.5 block line-clamp-1 text-xs text-muted-foreground">
+                    {skill.description}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2 mt-1">
         {/* File attach, web search, knowledge and MCP tools live in a single

@@ -6,8 +6,7 @@ import type { AgentToolFailure, AgentToolSuccess } from './agentToolResult.js';
 const READ_DEFAULT_LIMIT = 2000;
 
 type ApplyStrReplaceResult =
-  | AgentToolSuccess<{ content: string }>
-  | AgentToolFailure;
+  AgentToolSuccess<{ content: string }> | AgentToolFailure;
 
 /** Tool names, exported so callers can gate approval per tool (for example on the server). */
 export const CODING_TOOL_NAMES = {

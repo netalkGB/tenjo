@@ -5,7 +5,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 import './index.css';
 import { i18n } from './i18n/config';
 import { I18nProvider } from '@lingui/react';
-import { RouterProvider } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
 import { ErrorFallback } from './components/error';
 import { DialogProvider } from './contexts/dialog-context';
 import { BrandingProvider } from './contexts/branding-context';

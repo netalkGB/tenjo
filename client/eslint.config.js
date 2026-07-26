@@ -30,8 +30,11 @@ export default [
       'react-compiler': reactCompiler,
     },
     rules: {
-      // React Hooks
-      ...reactHooks.configs.recommended.rules,
+      // Keep classic hooks rules. v7 recommended also enables Compiler-aligned
+      // rules (refs / set-state-in-effect / immutability / ...) that overlap
+      // with eslint-plugin-react-compiler and need a dedicated migration pass.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
 
       // React Refresh
       'react-refresh/only-export-components': [

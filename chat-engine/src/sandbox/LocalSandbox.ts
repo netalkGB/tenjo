@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import { jailRelative } from './pathJail.js';
 import {
   DEFAULT_SNAPSHOT_EXCLUDE,
+  isUnderAbsoluteRoot,
   type Sandbox,
   type ExecResult,
   type ExecOptions,
@@ -13,6 +14,7 @@ import {
   type FileSnapshot,
   type SnapshotOptions,
 } from './Sandbox.js';
+import { SandboxFileOperationError } from './errors.js';
 
 const execAsync = promisify(exec);
 
@@ -42,6 +44,32 @@ export class LocalSandbox implements Sandbox {
     const jailed = jailRelative(relPath);
     const root = this.resolveRoot();
     return jailed === '' ? root : path.join(root, jailed);
+  }
+
+  /**
+   * Skills sit next to the workspace root (sibling `.skills/`), not inside it,
+   * so snapshots and user deliverables never include skill packages.
+   */
+  getSkillsRoot(): string {
+    return path.resolve(this.resolveRoot(), '..', '.skills');
+  }
+
+  async writeOutsideWorkspace(
+    absolutePath: string,
+    content: Buffer
+  ): Promise<{ bytesWritten: number }> {
+    const root = this.getSkillsRoot();
+    const resolved = path.resolve(absolutePath);
+    if (!isUnderAbsoluteRoot(root, resolved)) {
+      throw new SandboxFileOperationError(
+        'write',
+        absolutePath,
+        `path escapes skills root: ${absolutePath}`
+      );
+    }
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, content);
+    return { bytesWritten: content.length };
   }
 
   async exec(command: string, opts?: ExecOptions): Promise<ExecResult> {

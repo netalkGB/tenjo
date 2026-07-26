@@ -21,8 +21,7 @@ export interface AskUserQuestionArgs {
 }
 
 export type AskUserQuestionParseResult =
-  | AgentToolSuccess<{ value: AskUserQuestionArgs }>
-  | AgentToolFailure;
+  AgentToolSuccess<{ value: AskUserQuestionArgs }> | AgentToolFailure;
 
 export const ASK_USER_QUESTION_TOOL_DEFINITION: ToolDefinitionRequest = {
   type: 'function',

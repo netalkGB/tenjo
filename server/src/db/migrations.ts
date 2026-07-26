@@ -280,5 +280,25 @@ export const migrations: Migration[] = [
         ADD COLUMN IF NOT EXISTS "created_by" uuid,
         ADD COLUMN IF NOT EXISTS "updated_by" uuid;
     `
+  },
+  {
+    version: 15,
+    name: 'add_punch_skills',
+    up: `
+      CREATE TABLE "punch_skills" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "name" varchar(64) NOT NULL,
+        "description" text NOT NULL,
+        "enabled" boolean DEFAULT true NOT NULL,
+        "fs_path" text NOT NULL,
+        "created_by" uuid,
+        "updated_by" uuid,
+        "created_at" timestamp DEFAULT now(),
+        "updated_at" timestamp DEFAULT now(),
+        CONSTRAINT "punch_skills_user_name_unique" UNIQUE ("created_by", "name")
+      );
+      CREATE INDEX "punch_skills_created_by_idx" ON "punch_skills" USING btree ("created_by");
+      CREATE INDEX "punch_skills_enabled_idx" ON "punch_skills" USING btree ("created_by", "enabled");
+    `
   }
 ];

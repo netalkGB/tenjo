@@ -142,6 +142,22 @@ export interface Sandbox {
   /** Absolute in-sandbox path of the workspace root (for {@link setWorkingDir}). */
   getWorkspaceDir?(): string;
   /**
+   * Absolute root for Punch skill packages — on the sandbox filesystem but
+   * OUTSIDE the workspace. Model path-jailed file tools cannot reach here;
+   * agents use bash/exec (or paths returned by the punch tool). Optional only
+   * for minimal test doubles; DockerSandbox and LocalSandbox implement it.
+   */
+  getSkillsRoot?(): string;
+  /**
+   * Write a file at an absolute path under {@link getSkillsRoot} (parent dirs
+   * created). Service-layer only — not exposed as a model tool. Rejects paths
+   * that escape the skills root.
+   */
+  writeOutsideWorkspace?(
+    absolutePath: string,
+    content: Buffer
+  ): Promise<{ bytesWritten: number }>;
+  /**
    * Release any resources held by this sandbox handle. The underlying
    * container lifecycle is owned by the manager, not the handle, so this is a
    * no-op for DockerSandbox — present for symmetry / future backends.
@@ -163,6 +179,12 @@ export const PRIVATE_TMP_DIR = '.tmp';
  */
 export const AGENT_INTERNAL_DIR = '.tenjo';
 
+/**
+ * Absolute skills root inside a Docker project pod (outside `/workspace`).
+ * LocalSandbox uses a sibling `.skills` directory next to the workspace root.
+ */
+export const SANDBOX_SKILLS_DIR = '/skills';
+
 /** Directory names pruned from {@link Sandbox.snapshot} by default. */
 export const DEFAULT_SNAPSHOT_EXCLUDE = [
   'node_modules',
@@ -170,3 +192,37 @@ export const DEFAULT_SNAPSHOT_EXCLUDE = [
   PRIVATE_TMP_DIR,
   AGENT_INTERNAL_DIR,
 ];
+
+/**
+ * True when `absolutePath` is `root` or a path under it (POSIX absolute paths).
+ * Used to keep skill materialization inside the skills root.
+ */
+export function isUnderAbsoluteRoot(
+  root: string,
+  absolutePath: string
+): boolean {
+  const normRoot = normalizePosixAbsolute(root);
+  const normPath = normalizePosixAbsolute(absolutePath);
+  return normPath === normRoot || normPath.startsWith(`${normRoot}/`);
+}
+
+/** Normalize a POSIX absolute path (collapse `.` / `..`, strip trailing slash). */
+export function normalizePosixAbsolute(input: string): string {
+  const raw = input.replace(/\\/g, '/');
+  if (!raw.startsWith('/')) {
+    throw new Error(`expected absolute path, got: ${input}`);
+  }
+  const segments: string[] = [];
+  for (const segment of raw.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length === 0) {
+        throw new Error(`path escapes filesystem root: ${input}`);
+      }
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return `/${segments.join('/')}`;
+}

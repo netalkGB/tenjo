@@ -16,6 +16,13 @@ export {
   type AskUserQuestionOption,
 } from './askUserQuestionTool';
 export {
+  PUNCH_TOOL_NAME,
+  PUNCH_TOOL_DEFINITION,
+  PUNCH_COMPACT_HINT,
+  truncateSkillDescription,
+  buildPunchSkillsPromptSection,
+} from './punchTool';
+export {
   createPlanController,
   displayTask,
   PLAN_MODE_PRESENT_PLAN_NUDGE,

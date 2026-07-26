@@ -11,6 +11,7 @@ import { KnowledgeRepository } from './KnowledgeRepository';
 import { ImageAnalysisCacheRepository } from './ImageAnalysisCacheRepository';
 import { AgentProjectRepository } from './AgentProjectRepository';
 import { AgentMessageRepository } from './AgentMessageRepository';
+import { PunchSkillRepository } from './PunchSkillRepository';
 
 export const threadRepo = new ThreadRepository(pool);
 export const messageRepo = new MessageRepository(pool);
@@ -24,3 +25,4 @@ export const knowledgeRepo = new KnowledgeRepository(pool);
 export const imageAnalysisCacheRepo = new ImageAnalysisCacheRepository(pool);
 export const agentProjectRepo = new AgentProjectRepository(pool);
 export const agentMessageRepo = new AgentMessageRepository(pool);
+export const punchSkillRepo = new PunchSkillRepository(pool);

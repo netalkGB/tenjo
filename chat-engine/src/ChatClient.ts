@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   type ChatApiClient,
   type ChatApiImageDetail,
@@ -45,6 +46,10 @@ interface ToolCallResponse {
   };
 }
 
+/**
+ * Domain chat message. After provider conversion, `content` is always set
+ * (empty string for pure tool-call assistant turns).
+ */
 export interface MessageRequest {
   role: string;
   content: string | MessageContent[];
@@ -60,12 +65,7 @@ export interface PendingToolCall {
 }
 
 export type ChatStatus =
-  | 'unknown'
-  | 'message'
-  | 'thinking'
-  | 'reasoning'
-  | 'tool_call'
-  | 'done';
+  'unknown' | 'message' | 'thinking' | 'reasoning' | 'tool_call' | 'done';
 
 export class ChatClient {
   private chatApiClient: ChatApiClient;
@@ -225,11 +225,8 @@ export class ChatClient {
     this.currentStatus = status;
   }
 
-  public async sendMessage(
-    message?: string,
-    imageUrls?: string[],
-    options: { requireToolApproval?: boolean; signal?: AbortSignal } = {}
-  ): Promise<void> {
+  /** Append a user message without invoking the model. */
+  public appendUserMessage(message?: string, imageUrls?: string[]): void {
     const content: MessageContent[] = [
       ...(message ? [{ type: 'text' as const, text: message }] : []),
       ...(imageUrls?.map((url) => ({
@@ -237,11 +234,48 @@ export class ChatClient {
         image_url: { url },
       })) ?? []),
     ];
-
     this.addMessage({
       role: MessageRole.USER,
-      content: content,
+      content,
     });
+  }
+
+  /**
+   * Append an assistant message that requests tool calls (results not yet set).
+   * Hosts run these through the normal tool executor before the model continues.
+   */
+  public appendAssistantToolCalls(
+    calls: ReadonlyArray<{
+      name: string;
+      args: Record<string, unknown>;
+      id?: string;
+    }>
+  ): ToolCallResponse[] {
+    const tool_calls: ToolCallResponse[] = calls.map((call) => ({
+      type: 'function',
+      id: call.id ?? randomUUID(),
+      function: {
+        name: call.name,
+        arguments: JSON.stringify(call.args),
+      },
+    }));
+    this.addMessage({
+      role: MessageRole.ASSISTANT,
+      content: '',
+      tool_calls,
+    });
+    return tool_calls;
+  }
+
+  public async sendMessage(
+    message?: string,
+    imageUrls?: string[],
+    options: {
+      requireToolApproval?: boolean;
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<void> {
+    this.appendUserMessage(message, imageUrls);
     const res = await this.chatApiClient.chatStream(
       this.outgoingMessageTransform(this._messages),
       options.signal ?? this.abortController.signal
@@ -361,10 +395,11 @@ export class ChatClient {
     this._messages[0] = systemPrompt;
   }
 
+  /** Map a provider response into a domain MessageRequest (`content` defaults to ""). */
   private toMessageRequest(res: ChatApiResponse): MessageRequest {
     return {
-      role: res.role as string,
-      content: res.content as string,
+      role: res.role ?? MessageRole.ASSISTANT,
+      content: res.content ?? '',
       reasoning: res.reasoning,
       tool_calls: res.tool_calls?.map((tc) => ({
         type: tc.type,

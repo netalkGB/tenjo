@@ -54,13 +54,16 @@ const ToolCallSchema = z.object({
   function: z.object({ name: z.string(), arguments: z.string() })
 });
 
-/** The persisted chat-engine MessageRequest. `content` is string | parts. */
+/**
+ * Wire form of chat-engine MessageRequest.
+ * `content` / `reasoning` stay optional so older persisted rows still validate.
+ */
 export const MessageDataSchema = z.object({
   role: z.string(),
-  content: z.unknown(),
-  reasoning: z.string().optional(),
+  content: z.unknown().optional().nullable(),
+  reasoning: z.string().optional().nullable(),
   tool_calls: z.array(ToolCallSchema).optional(),
-  tool_call_id: z.string().optional()
+  tool_call_id: z.string().optional().nullable()
 });
 export type MessageData = z.infer<typeof MessageDataSchema>;
 

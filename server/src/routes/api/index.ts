@@ -7,6 +7,7 @@ import { chatRouter } from './chat';
 import { settingsRouter } from './settings';
 import { knowledgeRouter } from './knowledge';
 import { agentRouter } from './agent';
+import { punchRouter } from './punch';
 
 export const apiRouter = express.Router();
 apiRouter.use('/login', loginRouter);
@@ -17,3 +18,4 @@ apiRouter.use('/chat', chatRouter);
 apiRouter.use('/settings', settingsRouter);
 apiRouter.use('/knowledge', knowledgeRouter);
 apiRouter.use('/agent', agentRouter);
+apiRouter.use('/punch', punchRouter);

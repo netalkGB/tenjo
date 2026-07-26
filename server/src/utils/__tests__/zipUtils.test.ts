@@ -80,4 +80,40 @@ describe('ZipUtils', () => {
       'hello'
     ]);
   });
+
+  it('extracts STORED archives created by createArchive', () => {
+    const archive = ZipUtils.createArchive([
+      {
+        path: 'SKILL.md',
+        content: Buffer.from(
+          '---\nname: a\ndescription: b\n---\nbody\n',
+          'utf8'
+        )
+      },
+      {
+        path: 'scripts/run.sh',
+        content: Buffer.from('echo hi\n', 'utf8')
+      }
+    ]);
+
+    const entries = ZipUtils.extractArchive(archive);
+    expect(entries.map((e) => e.path).sort()).toEqual([
+      'SKILL.md',
+      'scripts/run.sh'
+    ]);
+    expect(
+      entries.find((e) => e.path === 'scripts/run.sh')?.content.toString('utf8')
+    ).toBe('echo hi\n');
+  });
+
+  it('rejects path traversal entries', () => {
+    // createArchive does not validate paths; extract must reject `..`.
+    const archive = ZipUtils.createArchive([
+      {
+        path: '../escape.txt',
+        content: Buffer.from('x', 'utf8')
+      }
+    ]);
+    expect(() => ZipUtils.extractArchive(archive)).toThrow(/path/i);
+  });
 });

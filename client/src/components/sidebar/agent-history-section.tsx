@@ -31,7 +31,12 @@ export function AgentHistorySection() {
         <SidebarMenuItem className="relative">
           <SidebarMenuButton
             className="cursor-pointer"
-            onClick={() => setIsDialogOpen(true)}
+            onClick={() => {
+              // Always cycle closed→open so a controlled Dialog that is still
+              // "open" in React state (but dismissed by navigation) reopens.
+              setIsDialogOpen(false);
+              queueMicrotask(() => setIsDialogOpen(true));
+            }}
             data-testid="sidebar-agent-history-button"
           >
             <MessageSquare />

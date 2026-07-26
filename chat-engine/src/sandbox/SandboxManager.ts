@@ -106,9 +106,7 @@ type ContainerState = 'running' | 'exited' | 'created' | 'missing';
 
 /** Coarse step of {@link SandboxManager.prewarm}, for progress reporting. */
 export type SandboxPrewarmPhase =
-  | 'building-image'
-  | 'starting-container'
-  | 'building-toolchain';
+  'building-image' | 'starting-container' | 'building-toolchain';
 
 /** Lifecycle of a project's GUI preview desktop, as seen by {@link SandboxManager.getGuiStatus}. */
 export type SandboxGuiStatus = 'stopped' | 'starting' | 'running';

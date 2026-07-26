@@ -1,9 +1,5 @@
 export type ChatApiStatus =
-  | 'unknown'
-  | 'message'
-  | 'reasoning'
-  | 'tool_call'
-  | 'done';
+  'unknown' | 'message' | 'reasoning' | 'tool_call' | 'done';
 
 export interface ChatApiToolCallResponse {
   type: string;
@@ -22,8 +18,7 @@ export interface ChatApiResponse {
 }
 
 export type ChatApiMessageContent =
-  | ChatApiMessageTextContent
-  | ChatApiMessageImageContent;
+  ChatApiMessageTextContent | ChatApiMessageImageContent;
 
 export interface ChatApiMessageTextContent {
   type: 'text';

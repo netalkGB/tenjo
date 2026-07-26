@@ -2,7 +2,6 @@ import {
   ChatInput,
   UserMessageSection,
   AssistantMessageSection,
-  ChatSkeleton,
   ChatTitleHeader,
   ChatStatusLine,
   ScrollToBottomButton
@@ -10,7 +9,7 @@ import {
 import type { ChatStatus } from '@/components/chat';
 import { useLocation, useLoaderData } from 'react-router';
 import { MainLayout } from '../layout';
-import { Suspense, useEffect, useReducer, useState, useRef, use } from 'react';
+import { useEffect, useReducer, useState, useRef } from 'react';
 import {
   sendMessageToThread,
   editAndResendMessage,
@@ -40,7 +39,7 @@ import { convertThreadMessages } from './messageConverter';
 
 interface LoaderData {
   threadId: string;
-  data: Promise<ThreadMessagesResponse>;
+  data: ThreadMessagesResponse;
 }
 
 const CODE_EXECUTION_TOOL_NAME = 'tenjo_execute_code';
@@ -55,25 +54,21 @@ function resolveToolCallStatus(event: ToolCallEvent): ChatStatus {
 export function Chat() {
   const { threadId, data } = useLoaderData() as LoaderData;
 
-  return (
-    <Suspense key={threadId} fallback={<ChatSkeleton />}>
-      <ChatContent threadId={threadId} dataPromise={data} />
-    </Suspense>
-  );
+  return <ChatContent key={threadId} threadId={threadId} initialData={data} />;
 }
 
 interface ChatContentProps {
   threadId: string;
-  dataPromise: Promise<ThreadMessagesResponse>;
+  initialData: ThreadMessagesResponse;
 }
 
-function ChatContent({ threadId, dataPromise }: ChatContentProps) {
+function ChatContent({ threadId, initialData }: ChatContentProps) {
   const {
     messages: initialMessages,
     title: initialTitle,
     pinned: initialPinned,
     isGenerating: initialIsGenerating
-  } = use(dataPromise);
+  } = initialData;
   const location = useLocation();
   const { reload } = useHistory();
   const {

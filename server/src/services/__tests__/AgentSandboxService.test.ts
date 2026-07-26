@@ -12,6 +12,10 @@ const createMockSandboxManager = (): MockSandboxManager => ({
   prewarm: vi.fn()
 });
 
+class MockSandboxError extends Error {
+  override name = 'SandboxError';
+}
+
 async function loadService(manager: MockSandboxManager): Promise<{
   module: AgentSandboxModule;
   SandboxManager: ReturnType<typeof vi.fn>;
@@ -22,7 +26,9 @@ async function loadService(manager: MockSandboxManager): Promise<{
   });
 
   vi.doMock('tenjo-chat-engine', () => ({
-    SandboxManager
+    SandboxManager,
+    // Service uses `error instanceof SandboxError`; the mock must export it.
+    SandboxError: MockSandboxError
   }));
   vi.doMock('../../logger', () => ({
     default: {

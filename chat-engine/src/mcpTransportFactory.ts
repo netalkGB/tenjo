@@ -27,9 +27,7 @@ export interface OAuthHttpMcpServerConfig {
 }
 
 export type McpServerConfig =
-  | StdioMcpServerConfig
-  | HttpMcpServerConfig
-  | OAuthHttpMcpServerConfig;
+  StdioMcpServerConfig | HttpMcpServerConfig | OAuthHttpMcpServerConfig;
 
 export type McpServersConfig = Record<string, McpServerConfig>;
 

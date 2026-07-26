@@ -20,6 +20,8 @@ import {
   ASK_USER_QUESTION_TOOL_DEFINITION,
   ASK_USER_QUESTION_COMPACT_HINT,
   parseAskUserQuestionArgs,
+  buildPunchSkillsPromptSection,
+  PUNCH_TOOL_NAME,
   buildCompactDevServerHint,
   buildCompactHostPrivatePreviewHint,
   SANDBOX_COMPACT_COMMON_TOOLCHAIN_HINT,
@@ -36,6 +38,7 @@ import {
   type SandboxWatcher,
   type MessageRequest,
   type QueuedItem,
+  type ForcedToolCall,
   type AgentToolCall,
   type LocalToolHandler,
   type McpClientManager,
@@ -72,7 +75,8 @@ import {
   globalSettingService,
   fileUploadService,
   mcpToolService,
-  userService
+  userService,
+  punchSkillService
 } from './registry';
 import { generateTitle, createFallbackTitle } from './TitleGenerationService';
 import {
@@ -92,6 +96,7 @@ import {
   CONTEXT_UPLOAD_DIR
 } from '../utils/agentFiles';
 import { ZipUtils, type ZipEntry } from '../utils/zipUtils';
+import { parsePunchSlashCommand } from '../utils/punchSlash';
 import {
   wrapContextNote,
   stripContextNote,
@@ -200,6 +205,8 @@ function sessionLocalDefinitions(
 export function buildAgentSystemPromptContent(options: {
   sandbox: Pick<Sandbox, 'devPorts'>;
   documentTask: boolean;
+  /** Enabled Punch skills for the system prompt. */
+  punchSkills?: ReadonlyArray<{ name: string; description: string }>;
 }): string {
   const previewHint = options.documentTask
     ? ''
@@ -212,11 +219,13 @@ export function buildAgentSystemPromptContent(options: {
   ]
     .filter(Boolean)
     .join('\n\n');
+  const punchHint = buildPunchSkillsPromptSection(options.punchSkills ?? []);
   const sandboxHint = [
     SANDBOX_COMPACT_WORKSPACE_HINT,
     previewHint,
     toolchainHint,
-    ASK_USER_QUESTION_COMPACT_HINT
+    ASK_USER_QUESTION_COMPACT_HINT,
+    punchHint
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -495,17 +504,50 @@ class AgentSessionService {
     const note = command.contextFiles?.length
       ? await this.materializeContextFiles(session, command.contextFiles)
       : '';
-    const hiddenNotes = [note]
-      .filter((value) => value.trim().length > 0)
-      .join('\n\n');
-    const baseText = hiddenNotes
-      ? `${wrapContextNote(hiddenNotes)}\n\n${command.text}`
+    // Slash force-load runs the real punch tool via ChatAgent.executeTool.
+    const forcedToolCalls = await this.resolveSlashPunchToolCalls(
+      session,
+      command.text
+    );
+    const baseText = note
+      ? `${wrapContextNote(note)}\n\n${command.text}`
       : command.text;
     const text = mode === 'plan' ? session.plan.wrapTask(baseText) : baseText;
     await agentProjectRepo.update(session.projectId, { mode });
     agentEventBus.emit(session.projectId, { type: 'mode', mode });
     this.maybeSetTitle(session.projectId, command.text, session.modelConfig);
-    session.agent.submit(text);
+    session.agent.submit(
+      text,
+      undefined,
+      forcedToolCalls.length > 0 ? { forcedToolCalls } : undefined
+    );
+  }
+
+  /**
+   * If the prompt contains an enabled Punch slash command, schedule a real
+   * punch tool call (same executeTool path as a model-initiated call).
+   */
+  private async resolveSlashPunchToolCalls(
+    session: AgentSession,
+    promptText: string
+  ): Promise<ForcedToolCall[]> {
+    const enabled = await punchSkillService.listEnabled(session.userId);
+    if (enabled.length === 0) {
+      return [];
+    }
+    const skillName = parsePunchSlashCommand(
+      promptText,
+      enabled.map((s) => s.name)
+    )?.skillName;
+    if (!skillName) {
+      return [];
+    }
+    return [
+      {
+        name: PUNCH_TOOL_NAME,
+        args: { skill_name: skillName }
+      }
+    ];
   }
 
   /** Copies uploaded context files into the sandbox. */
@@ -808,9 +850,11 @@ class AgentSessionService {
         agentEventBus.emit(projectId, { type: 'plan-resolved', approved })
     });
 
+    const punchTool = punchSkillService.createPunchTool(userId, sandbox);
     const { definitions, handlers } = bundleTools([
       ...createCodingTools(sandbox),
       ...plan.tools,
+      punchTool,
       createRestartPreviewTool(sandbox, () => {
         const live = this.sessions.get(projectId);
         if (live) {
@@ -906,11 +950,16 @@ class AgentSessionService {
       project,
       persistedMessageData
     );
+    const punchSkills = await punchSkillService.listEnabled(userId);
     const systemPrompt: MessageRequest = {
       role: 'system',
       content: buildAgentSystemPromptContent({
         sandbox,
-        documentTask: documentPromptEnabled
+        documentTask: documentPromptEnabled,
+        punchSkills: punchSkills.map((s) => ({
+          name: s.name,
+          description: s.description
+        }))
       })
     };
     client.setSystemPrompt(systemPrompt);
@@ -1621,13 +1670,21 @@ class AgentSessionService {
 
   // ---- compaction ----------------------------------------------------------
 
-  /** Refreshes the session system prompt. */
-  private refreshSystemPrompt(session: AgentSession, client: ChatClient): void {
+  /** Refresh the session system prompt with the current Punch skill list. */
+  private async refreshSystemPrompt(
+    session: AgentSession,
+    client: ChatClient
+  ): Promise<void> {
+    const punchSkills = await punchSkillService.listEnabled(session.userId);
     const systemPrompt: MessageRequest = {
       role: 'system',
       content: buildAgentSystemPromptContent({
         sandbox: session.sandbox,
-        documentTask: session.documentPromptEnabled
+        documentTask: session.documentPromptEnabled,
+        punchSkills: punchSkills.map((s) => ({
+          name: s.name,
+          description: s.description
+        }))
       })
     };
     client.setMessages([
@@ -1641,7 +1698,7 @@ class AgentSessionService {
     session: AgentSession,
     client: ChatClient
   ): Promise<void> {
-    this.refreshSystemPrompt(session, client);
+    await this.refreshSystemPrompt(session, client);
     await session.workspace.prepareTurn();
     await this.refreshAgentTools(session);
     if (session.maxContext === null) {

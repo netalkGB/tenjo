@@ -46,7 +46,8 @@ import {
   mcpOAuthService,
   mcpToolService,
   fileCleanupService,
-  imageService
+  imageService,
+  punchSkillService
 } from '../../services/registry';
 import {
   ImageNotFoundError,
@@ -744,6 +745,8 @@ settingsRouter.delete(
       if (sessionUser.id === id) {
         throw new HttpError(StatusCodes.BAD_REQUEST, 'Cannot delete yourself');
       }
+
+      await punchSkillService.deleteAllForUser(id);
 
       const deleted = await userService.deleteUser(id);
 

@@ -9,7 +9,8 @@ import {
   Loader2,
   ShieldQuestion,
   Terminal,
-  Wrench
+  Wrench,
+  Zap
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { fencedCode, languageFromPath } from '@/lib/codeFence';
@@ -24,7 +25,8 @@ const TOOL_ICON: Record<string, typeof Wrench> = {
   str_replace: FilePen,
   write_file: FilePlus,
   present_plan: ListChecks,
-  update_plan: ListChecks
+  update_plan: ListChecks,
+  punch: Zap
 };
 
 /** One-line summary of a tool call's most relevant argument (header preview). */
@@ -33,6 +35,9 @@ function summarizeArgs(name: string, rawArgs: string): string {
     const args = JSON.parse(rawArgs) as Record<string, unknown>;
     if (name === 'bash' && typeof args.command === 'string') {
       return args.command;
+    }
+    if (name === 'punch' && typeof args.skill_name === 'string') {
+      return args.skill_name;
     }
     if (name === 'update_plan' && typeof args.step === 'number') {
       const status =
@@ -64,7 +69,7 @@ const PLAIN_LANGUAGE = 'plaintext';
 
 /** Map a tool call's args to a syntax-highlightable input block. */
 function toolInput(name: string, rawArgs: string): ToolInput {
-  let args: Record<string, unknown> = {};
+  let args: Record<string, unknown>;
   try {
     args = JSON.parse(rawArgs) as Record<string, unknown>;
   } catch {
@@ -167,7 +172,9 @@ export function AgentToolCard({
           )}
         />
         <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 font-mono text-xs font-medium">{name}</span>
+        <span className="shrink-0 font-mono text-xs font-medium">
+          {name === 'punch' ? t('punch') : name}
+        </span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
           {summarizeArgs(name, prettyArgs)}
         </span>

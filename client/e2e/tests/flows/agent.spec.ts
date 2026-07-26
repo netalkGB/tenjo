@@ -739,11 +739,13 @@ test.describe
       );
 
       await item.click();
+      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15_000 });
       await expect(page).toHaveURL(new RegExp(`/agent/task/${id}$`), {
         timeout: 15_000
       });
 
       await page.getByTestId('sidebar-agent-history-button').click();
+      await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15_000 });
       await expect(item).toBeVisible({ timeout: 15_000 });
       await item.hover();
       await item.getByTestId('history-card-delete-button').click();

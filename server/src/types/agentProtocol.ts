@@ -242,12 +242,19 @@ function displayUserText(text: string): string {
  */
 function displayData(data: MessageRequest): MessageRequest {
   if (data.role !== 'user') {
-    return data;
+    // Older tool-call-only rows may omit content.
+    return data.content != null ? data : { ...data, content: '' };
   }
+
   if (typeof data.content === 'string') {
     const stripped = displayUserText(data.content);
     return stripped === data.content ? data : { ...data, content: stripped };
   }
+
+  if (!Array.isArray(data.content)) {
+    return { ...data, content: '' };
+  }
+
   let changed = false;
   const content: MessageContent[] = data.content.map((part) => {
     if (part.type !== 'text') {

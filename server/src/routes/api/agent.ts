@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { StatusCodes } from 'http-status-codes';
+import logger from '../../logger';
 import { requireCsrfToken } from '../../middleware/csrf';
 import { requireAuth } from '../../middleware/auth';
 import { agentMessageRepo } from '../../repositories/registry';
@@ -328,8 +329,12 @@ agentRouter.delete(
     await agentProjectService.deleteProject(project.id);
     try {
       await sandboxManager.destroy(project.id);
-    } catch {
+    } catch (error) {
       // The workspace may not exist yet (sandbox never created) — ignore.
+      logger.warn('Failed to destroy sandbox workspace for deleted project', {
+        projectId: project.id,
+        error
+      });
     }
     res.json({ ok: true });
   })

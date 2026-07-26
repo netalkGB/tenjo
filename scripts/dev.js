@@ -7,13 +7,13 @@ function runCommand(command, args, cwd, name) {
     stdio: 'inherit'
   });
 
-  child.on('error', (error) => {
+  child.on('error', error => {
     console.error(`Error starting ${name}:`, error);
     process.exit(1);
   });
 
-  child.on('exit', (code) => {
-    if (code !== 0) {
+  child.on('exit', code => {
+    if (code !== 0 && code !== null) {
       console.error(`${name} exited with code ${code}`);
       process.exit(code);
     }
@@ -22,25 +22,54 @@ function runCommand(command, args, cwd, name) {
   return child;
 }
 
-console.log('Starting development servers...');
+function runCommandOnce(command, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: 'inherit'
+    });
 
-const packages = [
-  { dir: 'chat-engine', name: 'Chat Engine' },
-  { dir: 'client', name: 'Client' },
-  { dir: 'server', name: 'Server' },
-];
-const children = packages.map(({ dir, name }) =>
-  runCommand('npm', ['run', 'dev'], path.join(__dirname, '..', dir), name)
-);
+    child.on('error', reject);
+    child.on('exit', code => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`));
+      }
+    });
+  });
+}
 
-// Handle Ctrl+C
-process.on('SIGINT', () => {
-  console.log('\nShutting down development servers...');
-  children.forEach((child) => child.kill('SIGINT'));
-  process.exit(0);
-});
+async function main() {
+  const root = path.join(__dirname, '..');
 
-process.on('SIGTERM', () => {
-  children.forEach((child) => child.kill('SIGTERM'));
-  process.exit(0);
-});
+  console.log('Building chat-engine (required before server starts)...');
+  try {
+    await runCommandOnce('npm', ['run', 'build'], path.join(root, 'chat-engine'));
+  } catch (error) {
+    console.error('Initial chat-engine build failed:', error.message);
+    process.exit(1);
+  }
+
+  console.log('Starting development servers...');
+
+  const packages = [
+    { dir: 'chat-engine', name: 'Chat Engine' },
+    { dir: 'client', name: 'Client' },
+    { dir: 'server', name: 'Server' }
+  ];
+  const children = packages.map(({ dir, name }) =>
+    runCommand('npm', ['run', 'dev'], path.join(root, dir), name)
+  );
+
+  const shutdown = () => {
+    console.log('\nShutting down development servers...');
+    children.forEach(child => child.kill('SIGINT'));
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+main();

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { MainLayout } from '../../layout';
+import { ApiError } from '@/api/errors/ApiError';
 import { AgentProvider, useAgent } from '@/contexts/agent-context';
 import { AgentPromptInput } from '@/components/agent/agent-prompt-input';
 import { AgentPlanCard } from '@/components/agent/agent-plan-card';
@@ -196,7 +197,7 @@ function MessageRow({
             options?: unknown;
             multiSelect?: unknown;
             header?: unknown;
-          } = {};
+          };
           try {
             parsedArgs = JSON.parse(call.args);
           } catch {
@@ -270,6 +271,7 @@ function AgentWorkspace({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const {
     state,
+    notFound,
     submit,
     submitting,
     approve,
@@ -750,6 +752,11 @@ function AgentWorkspace({ projectId }: { projectId: string }) {
       </div>
     ) : null;
   };
+
+  // Throw so the route ErrorBoundary replaces the whole shell (no sidebar).
+  if (notFound) {
+    throw new ApiError('Not Found', 404);
+  }
 
   return (
     <MainLayout

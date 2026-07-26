@@ -1,6 +1,6 @@
 {
   "name": "tenjo-chat-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "build": "tsc",
@@ -12,7 +12,7 @@
     "setup:browser-deps": "npx playwright install-deps chromium"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@playwright/browser-chromium": "^1.59.1",
     "dotenv": "^17.2.2",
     "playwright": "^1.59.1",
@@ -20,16 +20,16 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.4.0",
     "@types/source-map-support": "^0.5.10",
     "@typescript-eslint/eslint-plugin": "^8.42.0",
     "@typescript-eslint/parser": "^8.42.0",
-    "eslint": "^9.35.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-node": "^11.1.0",
     "nodemon": "^3.1.14",
     "prettier": "^3.6.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.3"
   },
   "description": "",
   "main": "dist/index.js",

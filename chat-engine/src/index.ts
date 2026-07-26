@@ -15,6 +15,7 @@ export {
   type QueuedItem,
   type QueuedItemStatus,
   type AgentToolCall,
+  type ForcedToolCall,
   type ToolExecutionDecision,
   type ExecuteToolFn,
   type TextOnlyNudgeContext,
@@ -119,6 +120,9 @@ export {
   type WatchOptions,
   type SandboxWatcher,
   DEFAULT_SNAPSHOT_EXCLUDE,
+  SANDBOX_SKILLS_DIR,
+  isUnderAbsoluteRoot,
+  normalizePosixAbsolute,
 } from './sandbox/Sandbox';
 export { jailRelative, PathJailError } from './sandbox/pathJail';
 export { diffSnapshots } from './sandbox/diffSnapshots';
@@ -162,6 +166,11 @@ export {
   ASK_USER_QUESTION_SYSTEM_HINT,
   ASK_USER_QUESTION_COMPACT_HINT,
   parseAskUserQuestionArgs,
+  PUNCH_TOOL_NAME,
+  PUNCH_TOOL_DEFINITION,
+  PUNCH_COMPACT_HINT,
+  truncateSkillDescription,
+  buildPunchSkillsPromptSection,
   createPlanController,
   displayTask,
   PLAN_MODE_PRESENT_PLAN_NUDGE,
