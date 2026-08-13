@@ -5397,7 +5397,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------
-fast-uri@3.1.4
+fast-uri@3.1.5
 Repository: https://github.com/fastify/fast-uri
 Publisher: Vincent Le Goff
 License Text:
@@ -6200,7 +6200,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------
-hono@4.12.32
+hono@4.13.1
 Repository: https://github.com/honojs/hono
 Publisher: Yusuke Wada
 License Text:

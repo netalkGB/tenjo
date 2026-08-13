@@ -94,6 +94,8 @@ npm run dev
 
 Linuxでは、Tenjoのサーバープロセスの実行ユーザーにDockerを操作する権限が必要です。たとえば、そのユーザーを `docker` グループに追加するなどの設定が必要です。
 
+macOSの場合、Docker Desktopでは動作しません。Colimaなどを使用して環境を構築してください。
+
 Tenjoは以下のDockerリソースを作成・管理します。
 
 - コンテナ: `tenjo-sandbox`

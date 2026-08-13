@@ -4,15 +4,15 @@ A self-hosted AI chat and agent workspace for local LLM servers such as LM Studi
 
 <table align="center">
   <tr>
-    <td colspan="2" align="center"><img width="520" alt="Screenshot" src="https://github.com/user-attachments/assets/699ff1a9-e691-4319-a7a1-7554e9656c12" /></td>
+    <td colspan="2" align="center"><img width="520" alt="Screenshot" src="./docs/assets/screenshot-main.png" /></td>
   </tr>
   <tr>
-    <td><img width="240" alt="Screenshot" src="https://github.com/user-attachments/assets/0b1f2045-7e77-43dc-9e76-c1c85697d7b5" /></td>
-    <td><img width="240" alt="Screenshot" src="https://github.com/user-attachments/assets/699b0fc8-5b85-473c-9e11-d3793b578625" /></td>
+    <td><img width="240" alt="Screenshot" src="./docs/assets/screenshot-chat-1.png" /></td>
+    <td><img width="240" alt="Screenshot" src="./docs/assets/screenshot-chat-2.png" /></td>
   </tr>
   <tr>
-    <td><img width="240" alt="Screenshot" src="https://github.com/user-attachments/assets/1a3eeb45-b930-4f7c-b730-e50139422ea6" /></td>
-    <td><img width="240" alt="Screenshot" src="https://github.com/user-attachments/assets/6bff6897-adbe-4f71-a739-589aeaca8353" /></td>
+    <td><img width="240" alt="Screenshot" src="./docs/assets/screenshot-agent-1.png" /></td>
+    <td><img width="240" alt="Screenshot" src="./docs/assets/screenshot-agent-2.png" /></td>
   </tr>
 </table>
 
@@ -94,6 +94,8 @@ npm run dev
 Docker is required because the agent runs in a sandbox container.
 
 On Linux, the user running the Tenjo server process must have permission to operate Docker. For example, you may need to add that user to the `docker` group.
+
+On macOS, it does not work with Docker Desktop. Please use Colima instead.
 
 Tenjo creates and manages the following Docker resources:
 

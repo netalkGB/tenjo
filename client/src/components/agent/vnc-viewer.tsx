@@ -14,8 +14,6 @@ const REMOTE_PASTE_DELAY_MS = 25;
 export function VncViewer({ projectId }: { projectId: string }) {
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerFrameRef = useRef<HTMLDivElement>(null);
-  const physicalPixelMountRef = useRef<HTMLDivElement>(null);
   const pointerInsideRef = useRef(false);
   const [viewerState, setViewerState] = useState<ViewerState>('connecting');
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -181,44 +179,9 @@ export function VncViewer({ projectId }: { projectId: string }) {
     };
   }, [projectId, reconnectAttempt]);
 
-  useEffect(() => {
-    const viewerFrame = viewerFrameRef.current;
-    const physicalPixelMount = physicalPixelMountRef.current;
-    if (!viewerFrame || !physicalPixelMount) {
-      return;
-    }
-    const applyPhysicalPixelScale = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const w = Math.round(viewerFrame.clientWidth * dpr);
-      const h = Math.round(viewerFrame.clientHeight * dpr);
-      if (w === 0 || h === 0) {
-        return;
-      }
-      physicalPixelMount.style.width = `${w}px`;
-      physicalPixelMount.style.height = `${h}px`;
-      physicalPixelMount.style.transform = `scale(${1 / dpr})`;
-    };
-    applyPhysicalPixelScale();
-    const observer = new ResizeObserver(applyPhysicalPixelScale);
-    observer.observe(viewerFrame);
-    window.addEventListener('resize', applyPhysicalPixelScale);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', applyPhysicalPixelScale);
-    };
-  }, []);
-
   return (
-    <div
-      ref={viewerFrameRef}
-      className="relative h-full min-h-0 w-full overflow-hidden rounded-md border bg-background"
-    >
-      <div
-        ref={physicalPixelMountRef}
-        className="absolute left-0 top-0 origin-top-left"
-      >
-        <div ref={containerRef} className="h-full w-full" />
-      </div>
+    <div className="relative h-full min-h-0 w-full overflow-hidden rounded-md border bg-background">
+      <div ref={containerRef} className="absolute inset-0" />
       {viewerState !== 'connected' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 text-sm text-muted-foreground">
           {viewerState === 'connecting' ? (
