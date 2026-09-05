@@ -18,7 +18,11 @@ import {
   buildPodmanExecArgs,
   type SandboxMode,
 } from './podmanExec.js';
-import { parsePublishedHostRanges, type PortRange } from './portRanges.js';
+import {
+  DEFAULT_SANDBOX_VNC_PORT_RANGE,
+  parsePublishedContainerRanges,
+  type PortRange,
+} from './portRanges.js';
 
 // Bump these tags when the corresponding Dockerfile changes.
 const DEFAULT_IMAGE = 'tenjo-agent-sandbox:10';
@@ -65,17 +69,15 @@ export interface SandboxManagerOptions {
   workspacesRoot?: string;
   /** Docker label key used to find/reap the shared container. */
   labelKey?: string;
-  /** `--cpus` limit for the shared container (shared by all projects). */
-  cpus?: string;
-  /** `--memory` limit for the shared container (shared by all projects). */
-  memory?: string;
   /** `--pids-limit` for the shared container. */
   pidsLimit?: number;
   /** Container network. 'bridge' (default) lets npm/pip reach the internet. */
   network?: string;
   /**
    * Host port mappings published on the shared container, using docker `-p`
-   * specs. Changing this recreates the container.
+   * specs. Empty (the default) does not publish anything to the host — the
+   * VNC relay reaches the container IP on the in-container port. Changing
+   * this recreates the container.
    */
   publishPorts?: string[];
   /**
@@ -117,6 +119,11 @@ function sanitizeName(id: string): string {
   return cleaned;
 }
 
+function inspectInt(value: string | undefined): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
  * Manages the shared Docker sandbox container, its nested podman toolchain, and
  * per-project pods used by agent sandboxes.
@@ -131,8 +138,6 @@ export class SandboxManager {
   private readonly podmanStorageRoot: string;
   private readonly workspacesRoot: string;
   private readonly labelKey: string;
-  private readonly cpus: string;
-  private readonly memory: string;
   private readonly pidsLimit: number;
   private readonly network: string;
   private readonly publishPorts: string[];
@@ -169,8 +174,6 @@ export class SandboxManager {
     this.workspacesRoot = options.workspacesRoot ?? DEFAULT_WORKSPACES_ROOT;
     this.podmanStorageRoot = `${this.workspacesRoot}/${PODMAN_STORAGE_DIR_NAME}`;
     this.labelKey = options.labelKey ?? DEFAULT_LABEL;
-    this.cpus = options.cpus ?? '2';
-    this.memory = options.memory ?? '2g';
     this.pidsLimit = options.pidsLimit ?? 4096;
     this.network = options.network ?? 'bridge';
     this.publishPorts = options.publishPorts ?? [];
@@ -386,10 +389,12 @@ export class SandboxManager {
         existing.image === this.image &&
         existing.storage === this.storageConfigLabel() &&
         (existing.mode === 'normal' || existing.mode === 'compat') &&
-        existing.init;
+        existing.init &&
+        existing.nanoCpus === 0 &&
+        existing.memoryBytes === 0;
       if (!upToDate) {
         defaultLogger.info(
-          'sandbox container is out of date (ports, image, storage layout, mode or init changed) — recreating it (files in the volume are kept)'
+          'sandbox container is out of date (ports, image, storage layout, mode, init or leftover CPU/memory limits) — recreating it (files in the volume are kept)'
         );
         await this.removeContainer();
       } else {
@@ -428,20 +433,30 @@ export class SandboxManager {
     image: string;
     storage: string;
     init: boolean;
+    nanoCpus: number;
+    memoryBytes: number;
   } | null> {
     const result = await runDocker(
       [
         'inspect',
         '-f',
-        `{{.State.Status}}|{{index .Config.Labels "${this.labelKey}.ports"}}|{{index .Config.Labels "${this.labelKey}.mode"}}|{{.Config.Image}}|{{index .Config.Labels "${this.labelKey}.storage"}}|{{.HostConfig.Init}}`,
+        [
+          '{{.State.Status}}',
+          `{{index .Config.Labels "${this.labelKey}.ports"}}`,
+          `{{index .Config.Labels "${this.labelKey}.mode"}}`,
+          '{{.Config.Image}}',
+          `{{index .Config.Labels "${this.labelKey}.storage"}}`,
+          '{{.HostConfig.Init}}',
+          '{{.HostConfig.NanoCPUs}}',
+          '{{.HostConfig.Memory}}',
+        ].join('|'),
         this.containerName,
       ],
       { dockerPath: this.dockerPath, timeoutMs: 15_000 }
     );
     if (!ok(result)) return null;
-    const [status, ports, mode, image, storage, init] = result.stdout
-      .trim()
-      .split('|');
+    const [status, ports, mode, image, storage, init, nanoCpus, memoryBytes] =
+      result.stdout.trim().split('|');
     const state: ContainerState =
       status === 'running' || status === 'created' ? status : 'exited';
     return {
@@ -451,6 +466,8 @@ export class SandboxManager {
       image: image ?? '',
       storage: storage ?? '',
       init: init === 'true',
+      nanoCpus: inspectInt(nanoCpus),
+      memoryBytes: inspectInt(memoryBytes),
     };
   }
 
@@ -588,10 +605,6 @@ export class SandboxManager {
         ...this.volumeMountArgs(),
         '-w',
         this.workspacesRoot,
-        '--cpus',
-        this.cpus,
-        '--memory',
-        this.memory,
         '--pids-limit',
         String(this.pidsLimit),
         '--shm-size',
@@ -916,9 +929,25 @@ export class SandboxManager {
     return { start: Number(match[1]), end: Number(match[2]) };
   }
 
+  /**
+   * Container-side port blocks to allocate from. `vnc-single` always has a
+   * pool (published specs, or {@link DEFAULT_SANDBOX_VNC_PORT_RANGE} when
+   * nothing is published to the host).
+   */
+  private allocationRanges(): PortRange[] {
+    const published = parsePublishedContainerRanges(this.publishPorts);
+    if (published.length > 0) {
+      return published;
+    }
+    if (this.portMode === 'vnc-single') {
+      return [DEFAULT_SANDBOX_VNC_PORT_RANGE];
+    }
+    return [];
+  }
+
   /** Allocate the lowest free published port block, or null if none is configured. */
   private async allocateDevPorts(): Promise<PortRange | null> {
-    const ranges = parsePublishedHostRanges(this.publishPorts);
+    const ranges = this.allocationRanges();
     if (ranges.length === 0) return null;
     const used = new Set<number>();
     const list = await this.runPodman(['pod', 'ps', '--format', 'json'], {
@@ -960,7 +989,9 @@ export class SandboxManager {
       }
     }
     throw new SandboxResourceExhaustedError(
-      'no free dev-server ports left for a new project — stop or delete another project, or widen publishPorts'
+      this.portMode === 'vnc-single'
+        ? 'no free VNC ports left for a new project — stop or delete another project, or widen the sandbox port range'
+        : 'no free dev-server ports left for a new project — stop or delete another project, or widen publishPorts'
     );
   }
 
@@ -1048,7 +1079,9 @@ export class SandboxManager {
     const { guiPort } = this.splitPortBlock(block);
     if (!guiPort) {
       throw new SandboxConfigurationError(
-        'no port is reserved for the GUI — publish a port range of at least 2 ports per project'
+        this.portMode === 'vnc-single'
+          ? 'no VNC port is reserved for the GUI — the sandbox port range is exhausted'
+          : 'no port is reserved for the GUI — publish a port range of at least 2 ports per project'
       );
     }
     const main = this.projectContainerName(projectId);
@@ -1284,12 +1317,34 @@ export class SandboxManager {
   }
 
   /**
-   * Return the project's VNC host port without starting anything.
+   * Return the project's in-container VNC port without starting anything.
    */
   async getGuiVncPort(projectId: string): Promise<number | undefined> {
     if (!this.mode) return undefined;
     const block = await this.podPorts(this.podName(projectId));
     return this.splitPortBlock(block).guiPort;
+  }
+
+  /**
+   * IPv4 address of the shared sandbox container on a Docker network, if any.
+   * Empty when the container uses host networking or has not started.
+   */
+  async getContainerIp(): Promise<string | undefined> {
+    const result = await runDocker(
+      [
+        'inspect',
+        '-f',
+        '{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}',
+        this.containerName,
+      ],
+      { dockerPath: this.dockerPath, timeoutMs: 15_000 }
+    );
+    if (!ok(result)) return undefined;
+    for (const line of result.stdout.split('\n')) {
+      const ip = line.trim();
+      if (ip) return ip;
+    }
+    return undefined;
   }
 
   /** Record that the sandbox was just used (input to an idle-shutdown sweep). */

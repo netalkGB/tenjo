@@ -44,11 +44,12 @@ function removeViewer(projectId: string): void {
 
 /**
  * WebSocket → TCP relay between the browser's VNC client (noVNC speaks RFB
- * over binary WebSocket frames) and the project's VNC server, which is only
- * published on the host loopback. The HTTP `upgrade` event bypasses the Express
- * middleware chain, so the request is authenticated here by running the SAME
- * session middleware by hand and then checking project ownership — an
- * unauthenticated or foreign socket never reaches the VNC port.
+ * over binary WebSocket frames) and the project's VNC server. The TCP target
+ * is the sandbox container IP (or AGENT_SANDBOX_VNC_HOST), not a host-published
+ * RFB port. The HTTP `upgrade` event bypasses the Express middleware chain, so
+ * the request is authenticated here by running the SAME session middleware by
+ * hand and then checking project ownership — an unauthenticated or foreign
+ * socket never reaches the VNC port.
  */
 
 const VNC_PATH = /^\/api\/agent\/projects\/([^/]+)\/vnc$/;
@@ -63,8 +64,11 @@ function toBuffer(data: RawData): Buffer {
 }
 
 /** Bidirectional pipe between an accepted WebSocket and the VNC TCP port. */
-function pipeToVnc(ws: WebSocket, port: number): void {
-  const tcp = net.connect({ host: '127.0.0.1', port });
+function pipeToVnc(
+  ws: WebSocket,
+  target: { host: string; port: number }
+): void {
+  const tcp = net.connect(target);
   // Server → client is the heavy direction (framebuffer updates). Pause the
   // TCP side until the WebSocket flushed each chunk, so a slow client can
   // never make the relay buffer an unbounded amount of pixels in memory.
@@ -118,8 +122,8 @@ async function handleUpgrade(
     rejectUpgrade(socket, 404, 'Not Found');
     return;
   }
-  const port = await agentGuiService.vncPort(project);
-  if (!port) {
+  const target = await agentGuiService.vncTarget(project);
+  if (!target) {
     rejectUpgrade(socket, 503, 'Service Unavailable');
     return;
   }
@@ -127,7 +131,7 @@ async function handleUpgrade(
     // Count this viewer for the idle reaper, releasing it on disconnect.
     addViewer(projectId);
     ws.on('close', () => removeViewer(projectId));
-    pipeToVnc(ws, port);
+    pipeToVnc(ws, target);
   });
 }
 

@@ -55,10 +55,20 @@ export default defineConfig({
     {
       name: 'flows',
       testDir: './e2e/tests/flows',
-      // Agent / Punch suites run in their own project (below) so they can stay
-      // serial while the regular flow specs remain fully parallel.
-      testIgnore: /(agent|punch)\.spec\.ts/,
+      // Agent / Punch / MCP-settings run in their own projects (below) so they
+      // can stay serial while the regular flow specs remain fully parallel.
+      testIgnore: /(agent|punch|mcp-settings)\.spec\.ts/,
       fullyParallel: true,
+      dependencies: ['setup', 'mcp']
+    },
+    {
+      // MCP servers and approval rules are global. Run this suite alone after
+      // setup, then chat/agent, so add/ban/delete cannot race those tests.
+      name: 'mcp',
+      testDir: './e2e/tests/flows',
+      testMatch: /mcp-settings\.spec\.ts/,
+      fullyParallel: false,
+      workers: 1,
       dependencies: ['setup']
     },
     {
@@ -74,7 +84,7 @@ export default defineConfig({
       // a turn — retry so a single transient miss doesn't fail (and, in a serial
       // block, skip) the suite.
       retries: 2,
-      dependencies: ['setup']
+      dependencies: ['setup', 'mcp']
     }
   ],
   webServer: {
@@ -97,7 +107,11 @@ export default defineConfig({
   use: {
     trace: 'on-first-retry',
     baseURL: `http://localhost:${port}`,
-    headless: process.env.E2E_HEADLESS === 'true' ? true : false
-    // launchOptions: { slowMo: 500 },
+    headless: process.env.E2E_HEADLESS === 'true' ? true : false,
+    launchOptions: {
+      args: [
+        '--disable-features=PasswordManagerOnboarding,PasswordLeakDetection'
+      ]
+    }
   }
 });

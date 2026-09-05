@@ -7,6 +7,13 @@ type MockSandboxManager = {
   prewarm: ReturnType<typeof vi.fn>;
 };
 
+const RESOURCE_ENV_KEYS = [
+  'AGENT_SANDBOX_PORTS',
+  'AGENT_SANDBOX_VNC_HOST',
+  'AGENT_SANDBOX_HOST',
+  'AGENT_GUI_KEYBOARD'
+] as const;
+
 const createMockSandboxManager = (): MockSandboxManager => ({
   isDockerAvailable: vi.fn(),
   prewarm: vi.fn()
@@ -44,14 +51,66 @@ async function loadService(manager: MockSandboxManager): Promise<{
 }
 
 describe('AgentSandboxService', () => {
+  const originalEnv: Record<string, string | undefined> = {};
+
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const key of RESOURCE_ENV_KEYS) {
+      originalEnv[key] = process.env[key];
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
+    for (const key of RESOURCE_ENV_KEYS) {
+      if (originalEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = originalEnv[key];
+      }
+    }
     vi.doUnmock('tenjo-chat-engine');
     vi.doUnmock('../../logger');
     vi.resetModules();
+  });
+
+  describe('SandboxManager options', () => {
+    it('should initialize without CPU or memory limits', async () => {
+      const manager = createMockSandboxManager();
+      const { SandboxManager } = await loadService(manager);
+
+      expect(SandboxManager).toHaveBeenCalledWith({
+        portMode: 'vnc-single',
+        publishPorts: [],
+        guiKeyboard: undefined
+      });
+    });
+
+    it('should expose AGENT_SANDBOX_VNC_HOST without changing SandboxManager ports', async () => {
+      process.env.AGENT_SANDBOX_VNC_HOST = 'host.docker.internal';
+      const manager = createMockSandboxManager();
+      const { module, SandboxManager } = await loadService(manager);
+
+      expect(module.SANDBOX_VNC_HOST).toBe('host.docker.internal');
+      expect(SandboxManager).toHaveBeenCalledWith({
+        portMode: 'vnc-single',
+        publishPorts: [],
+        guiKeyboard: undefined
+      });
+    });
+
+    it('should pass AGENT_SANDBOX_PORTS and AGENT_GUI_KEYBOARD when set', async () => {
+      process.env.AGENT_SANDBOX_PORTS = '127.0.0.1:6000-6010:6000-6010';
+      process.env.AGENT_GUI_KEYBOARD = 'us';
+      const manager = createMockSandboxManager();
+      const { SandboxManager } = await loadService(manager);
+
+      expect(SandboxManager).toHaveBeenCalledWith({
+        portMode: 'vnc-single',
+        publishPorts: ['127.0.0.1:6000-6010:6000-6010'],
+        guiKeyboard: 'us'
+      });
+    });
   });
 
   describe('getSandboxStatus', () => {

@@ -1,6 +1,10 @@
 import type { Sandbox } from 'tenjo-chat-engine';
 import { agentEventBus } from '../events/AgentEventBus';
-import { sandboxManager } from './AgentSandboxService';
+import { SANDBOX_PUBLISH_PORTS, sandboxManager } from './AgentSandboxService';
+import {
+  resolveSandboxVncHost,
+  resolveSandboxVncPort
+} from '../utils/sandboxVncTarget';
 import logger from '../logger';
 import type { AgentProject } from '../repositories/AgentProjectRepository';
 
@@ -732,6 +736,27 @@ class AgentGuiService {
   /** Returns the host VNC port for the project's GUI desktop. */
   async vncPort(project: AgentProject): Promise<number | undefined> {
     return sandboxManager.getGuiVncPort(project.id);
+  }
+
+  /**
+   * TCP host and port the VNC relay should dial. Prefers the sandbox
+   * container address so GUI preview does not require host port publish.
+   */
+  async vncTarget(
+    project: AgentProject
+  ): Promise<{ host: string; port: number } | undefined> {
+    const containerPort = await sandboxManager.getGuiVncPort(project.id);
+    if (!containerPort) {
+      return undefined;
+    }
+    const host = resolveSandboxVncHost(
+      process.env.AGENT_SANDBOX_VNC_HOST || process.env.AGENT_SANDBOX_HOST,
+      await sandboxManager.getContainerIp()
+    );
+    return {
+      host,
+      port: resolveSandboxVncPort(host, containerPort, SANDBOX_PUBLISH_PORTS)
+    };
   }
 }
 

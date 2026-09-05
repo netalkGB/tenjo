@@ -171,21 +171,25 @@ the CLI and the server.
   bind-mounted workspace (mount namespace) and its own network namespace — one
   project's bash cannot read a sibling's files or reach its in-pod servers. The
   agent is **root inside its project container** (apt/global npm work), which
-  the user namespace maps to the unprivileged sandbox uid outside. CPU/mem/pids
-  limits remain container-wide (rootless podman can't delegate cgroups without
-  systemd).
+  the user namespace maps to the unprivileged sandbox uid outside. CPU and
+  memory are not capped (`docker run` omits `--cpus` / `--memory` so the
+  daemon's host cap applies). `--pids-limit` still defaults to 4096
+  (rootless podman can't delegate cgroups without systemd).
 - **Two images**: the OUTER image (`tenjo-agent-sandbox:N`, podman host) is
   built by docker; the INNER toolchain image (`tenjo-agent-toolchain:N`) is
   built BY PODMAN inside the container on first use, fed the Dockerfile over
   stdin. Bump either tag on change — the container (outer) or the project pods
   (inner) are recreated to adopt it; the volume persists so no files are lost.
-- **Dev server ports** (`publishPorts` + `portsPerProject`): docker `-p` specs
-  publish a host range to the outer container at creation; each project pod is
-  allocated the lowest-free **block** of that range (stamped on a pod label,
-  freed with the pod) and publishes it on the outer interfaces, where docker's
-  forwards arrive. The per-project block is exposed as `Sandbox.devPorts` and
-  drives the dev-server prompt hint, so the agent is told exactly ITS ports.
-  Range exhausted = clear error; widen the range or lower `portsPerProject`.
+- **Ports** (`publishPorts` + `portsPerProject` / `portMode`): each project pod
+  is allocated a block of **in-container** ports (stamped on a pod label) and
+  binds them on the outer container's interfaces. `vnc-single` (the server GUI
+  preview) allocates **one VNC port per project** from `publishPorts`, or from
+  5174–5213 when nothing is published to the host. The VNC relay dials the
+  sandbox container IP on that container port — docker `-p` is optional and
+  only needed when the Node process cannot reach the container network (for
+  example Docker Desktop). `dev-block` still publishes a host range for
+  in-sandbox dev servers; the last port of a block of 2+ is VNC. Range
+  exhausted = clear error; widen the range or lower `portsPerProject`.
 - **Persistence**: the volume is durable; `stop`/`rm` of the container loses
   nothing. `destroy(id)` removes the project's pod + directory; `reset()`
   removes the container + volume.
@@ -221,15 +225,15 @@ on Linux/macOS, named pipe on Windows, or the `DOCKER_HOST` TCP endpoint when
 set), so **our code references no socket and assumes no transport** — the Windows
 unix-socket problem never arises.
 
-| Deployment                 | Tenjo runs as | Sandbox connection                                                                                | DinD / privileged | Socket mount                       |
-| -------------------------- | ------------- | ------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------- |
-| **Host (default, today)**  | host process  | `DOCKER_HOST` unset → local transport                                                             | no                | none                               |
-| **Containerized (future)** | a container   | `DOCKER_HOST=tcp://dockerproxy:2375` via a [socket-proxy] sidecar on the compose-internal network | no                | only inside the tiny proxy sidecar |
+| Deployment                         | Tenjo runs as | Sandbox / VNC                                                                                                                                     | DinD / privileged | Socket mount                       |
+| ---------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------- |
+| **Host (Linux)**                   | host process  | `DOCKER_HOST` unset; VNC relay uses the sandbox container IP (no host `-p`)                                                                       | no                | none                               |
+| **Host (Docker Desktop / Colima)** | host process  | Set `AGENT_SANDBOX_PORTS=127.0.0.1:5174-5213:5174-5213` so the relay can reach VNC on loopback                                                    | no                | none                               |
+| **Compose / nested Docker**        | a container   | Share a Docker network with `tenjo-sandbox`, or set `AGENT_SANDBOX_VNC_HOST`. Do not publish 5174–5213                                            | no                | optional                           |
+| **Host `docker.sock` mount**       | a container   | `AGENT_SANDBOX_VNC_HOST=host.docker.internal` **and** `AGENT_SANDBOX_PORTS=127.0.0.1:5174-5213:5174-5213`, or attach Tenjo to the sandbox network | no                | host socket into the app container |
 
-The containerized mode needs **no daemon reconfiguration, no TLS certs, no host
-firewall changes**, and reuses this code unchanged (only an env var + a compose
-file). Not built yet, but the design (named volume, all-ops-via-exec,
-`DOCKER_HOST` inheritance) keeps the door open.
+The GUI preview WebSocket (`/api/agent/projects/:id/vnc`) is the only VNC path
+the browser needs. RFB is not published on `0.0.0.0` by default.
 
 [socket-proxy]: https://github.com/Tecnativa/docker-socket-proxy
 
@@ -319,7 +323,9 @@ Built after the CLI proof is accepted (kept out of scope on purpose):
    API** (`listDir`/`readFile`/`readBinary`) and a **live file-change feed**
    (`watch`, streamed over the existing SSE) back the UI.
 2. **Containerized Tenjo (optional)** — a docker-compose with a socket-proxy
-   sidecar and `DOCKER_HOST=tcp://dockerproxy:2375`. No code change here.
+   sidecar and `DOCKER_HOST=tcp://dockerproxy:2375`. The VNC relay needs a
+   reachable sandbox address (`AGENT_SANDBOX_VNC_HOST` or a shared Docker
+   network); it does not assume `127.0.0.1`.
 3. **UI** — project create/list, project-scoped threads, file explorer + diff/PDF
    preview, approval UI.
 4. ~~**Rootless Podman pods**~~ — **implemented** (this document describes it).
@@ -328,7 +334,6 @@ Built after the CLI proof is accepted (kept out of scope on purpose):
    all permissive licenses, no copyleft; KasmVNC and the linuxserver Firefox
    image were rejected for being GPL) joins the project's pod on demand
    (`startGui`/`stopGui`/`getGuiStatus`), so the netns guarantees it only sees
-   that project's servers. The LAST port of the project's published block is
-   reserved as its VNC port (`splitPortBlock` — the dev-server hint shrinks
-   accordingly); the server exposes it through an authenticated WebSocket relay
-   to noVNC in the browser.
+   that project's servers. In `vnc-single` mode the project gets one VNC port
+   (`splitPortBlock`); `dev-block` still reserves the last port of a 2+ block.
+   The server exposes VNC through an authenticated WebSocket relay to noVNC.

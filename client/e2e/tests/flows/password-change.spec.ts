@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ADMIN_USER_NAME, ADMIN_PASSWORD } from '../setup/constants';
-import { login } from '../../helpers/auth';
+import { login, openLoginPage, submitLoginForm } from '../../helpers/auth';
 import { createUserViaInvitation } from '../../helpers/invitationCode';
 
 const NEW_PASSWORD = 'N3wP@ssw0rd!';
@@ -45,11 +45,8 @@ async function attemptLoginWithOldPassword(
   userName: string,
   oldPassword: string
 ): Promise<void> {
-  await page.goto('/login').catch(() => {});
-  await page.getByTestId('login-form-id-input').waitFor();
-  await page.getByTestId('login-form-id-input').fill(userName);
-  await page.getByTestId('login-form-password-input').fill(oldPassword);
-  await page.getByTestId('login-form-submit-button').click();
+  await openLoginPage(page);
+  await submitLoginForm(page, userName, oldPassword);
 
   // Stay on login page — old password must no longer work
   await expect(page).toHaveURL(/\/login/);

@@ -138,6 +138,16 @@ export {
   type SandboxGuiStatus,
 } from './sandbox/SandboxManager';
 export {
+  DEFAULT_SANDBOX_VNC_PORT_RANGE,
+  mapContainerPortToHostPort,
+  parsePublishedContainerRanges,
+  parsePublishedHostRanges,
+  parsePublishedPortSpec,
+  parsePublishedPortSpecs,
+  type PortRange,
+  type PublishedPortSpec,
+} from './sandbox/portRanges';
+export {
   DockerUnavailableError,
   SandboxCommandError,
   SandboxConfigurationError,

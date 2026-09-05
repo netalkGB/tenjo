@@ -9,11 +9,16 @@ export const AGENT_SANDBOX_UNAVAILABLE_MESSAGE =
   'The agent sandbox is not available.';
 
 /**
- * Host port range for VNC previews. Dev servers stay private inside the pod.
+ * Optional docker `-p` specs for the sandbox container. Empty (the default)
+ * does not publish VNC to the host; the WebSocket relay dials the container.
  */
 export const SANDBOX_PUBLISH_PORTS = process.env.AGENT_SANDBOX_PORTS
-  ? process.env.AGENT_SANDBOX_PORTS.split(',')
-  : ['127.0.0.1:5174-5213:5174-5213'];
+  ? process.env.AGENT_SANDBOX_PORTS.split(',').filter(Boolean)
+  : [];
+
+/** Override for the VNC relay TCP host. Unset → container IP, else 127.0.0.1. */
+export const SANDBOX_VNC_HOST =
+  process.env.AGENT_SANDBOX_VNC_HOST || process.env.AGENT_SANDBOX_HOST;
 
 export const sandboxManager = new SandboxManager({
   portMode: 'vnc-single',

@@ -16,12 +16,12 @@ import {
   SETUP_MCP_ARGS
 } from './constants';
 import { createUserViaInvitation } from '../../helpers/invitationCode';
-import { login } from '../../helpers/auth';
+import { login, openLoginPage } from '../../helpers/auth';
 
 test.describe
   .serial('setup', () => {
     test('create admin user', async ({ page }) => {
-      await page.goto('/login?redirect=%2F');
+      await openLoginPage(page);
       await page.getByTestId('login-form-register-link').click();
 
       // First user registration should not require invitation code
