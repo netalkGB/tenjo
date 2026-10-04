@@ -21,6 +21,8 @@ export class ModelNotFoundError extends ServiceError {
 
 export class ModelDuplicateError extends ServiceError {}
 
+export class ModelContextLengthError extends ServiceError {}
+
 export class BrandingValidationError extends ServiceError {}
 
 const APP_TITLE_MAX_LENGTH = 60;
@@ -264,6 +266,52 @@ export class GlobalSettingService {
       modelSettings,
       userId
     );
+  }
+
+  /**
+   * Sets or clears the context window typed for an OpenAI-compatible model.
+   * LM Studio and Ollama keep the length read from their own APIs.
+   */
+  async updateModelMaxContext(
+    modelId: string,
+    maxContextLength: number | null,
+    userId: string
+  ): Promise<ModelEntryResponse> {
+    const settings = await this.globalSettingRepo.getOrCreateSettings();
+    const modelSettings: ModelSettings = settings.model ?? {
+      activeId: '',
+      models: []
+    };
+    const entry = modelSettings.models.find((model) => model.id === modelId);
+    if (!entry) {
+      throw new ModelNotFoundError();
+    }
+    if (entry.type !== 'openai' && entry.type !== 'openai-compatible') {
+      throw new ModelContextLengthError(
+        'Context length for this provider is detected automatically'
+      );
+    }
+
+    if (maxContextLength === null) {
+      delete entry.maxContextLength;
+    } else {
+      entry.maxContextLength = maxContextLength;
+    }
+
+    await this.globalSettingRepo.updateSettingSection(
+      'model',
+      modelSettings,
+      userId
+    );
+
+    return {
+      id: entry.id,
+      type: entry.type,
+      baseUrl: entry.baseUrl,
+      model: entry.model,
+      hasToken: !!entry.tokenCredentialId,
+      maxContextLength: entry.maxContextLength
+    };
   }
 
   async updateMcpServersConfig(

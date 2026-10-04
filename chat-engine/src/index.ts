@@ -62,10 +62,15 @@ export {
 } from './ContextManager';
 export {
   OpenAIChatApiClient,
+  type ChatCompletionMessageRequest,
   type ToolDefinitionRequest,
   type ModelInfo,
   type StreamGuardOptions,
 } from './OpenAIChatApiClient';
+export {
+  coerceToolCallArguments,
+  coerceMessageToolArguments,
+} from './toolCallArguments';
 export { LocalChatApiClient } from './LocalChatApiClient';
 export { LmStudioChatApiClient } from './LmStudioChatApiClient';
 export { OllamaChatApiClient } from './OllamaChatApiClient';

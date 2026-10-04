@@ -7,6 +7,7 @@ import {
 import { ChatApiHttpError, type ChatStreamGuardError } from './ChatApiError';
 import { MessageRole } from './ChatClient';
 import { resolveImageUrls } from './openaiImageMessageUtils';
+import { coerceMessageToolArguments } from './toolCallArguments';
 import { OpenAIStreamGuard, type StreamGuardOptions } from './StreamGuard';
 
 export type { StreamGuardOptions, StreamProgress } from './StreamGuard';
@@ -132,10 +133,17 @@ export class OpenAIChatApiClient implements ChatApiClient {
     return new OpenAIStreamGuard(streamGuard);
   }
 
+  /** Images become data URIs, and truncated tool-call JSON is made replayable. */
+  private prepareOutgoingMessages(
+    messages: ChatCompletionMessageRequest[]
+  ): ChatCompletionMessageRequest[] {
+    return coerceMessageToolArguments(resolveImageUrls(messages));
+  }
+
   public async chatRequest(
     messages: ChatCompletionMessageRequest[]
   ): Promise<Response> {
-    const resolvedMessages = resolveImageUrls(messages);
+    const resolvedMessages = this.prepareOutgoingMessages(messages);
     const apiUrl = this.apiBaseUrl + '/v1/chat/completions';
     const headers = this.buildHeaders();
 
@@ -182,7 +190,7 @@ export class OpenAIChatApiClient implements ChatApiClient {
     messages: ChatCompletionMessageRequest[],
     signal?: AbortSignal
   ): Promise<Response> {
-    const resolvedMessages = resolveImageUrls(messages);
+    const resolvedMessages = this.prepareOutgoingMessages(messages);
     const apiUrl = this.apiBaseUrl + '/v1/chat/completions';
     const headers = this.buildHeaders();
 

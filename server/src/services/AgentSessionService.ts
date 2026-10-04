@@ -119,8 +119,10 @@ const STREAM_GUARD = {
   maxReasoningCharsWithoutOutput: 60000,
   maxDurationMs: 300000
 } as const;
-const SUMMARY_THRESHOLD_RATIO = 0.7;
+const SUMMARY_THRESHOLD_RATIO = 0.3;
 const SUMMARY_RECENT_KEEP = 12;
+const COMPACT_THRESHOLD_RATIO = 0.3;
+const COMPACT_TARGET_RATIO = 0.3;
 const STREAM_FLUSH_MS = 60;
 const STREAM_FLUSH_BYTES = 6000;
 const STREAM_EMIT_MAX_BYTES = 3500;
@@ -346,6 +348,8 @@ interface AgentSession {
   sandbox: Sandbox;
   plan: PlanController;
   modelConfig: ModelConfig;
+  /** Settings entry this session's model was resolved from. */
+  modelId: string;
   maxContext: number | null;
   apiClient: ReturnType<typeof createChatApiClient>;
   localDefinitions: ToolDefinitionRequest[];
@@ -976,6 +980,7 @@ class AgentSessionService {
       workspace,
       plan,
       modelConfig,
+      modelId: resolvedModelId,
       maxContext,
       apiClient,
       localDefinitions: definitions,
@@ -1004,14 +1009,16 @@ class AgentSessionService {
         stripThinkingFromMessages(messages),
         session.agent.getCompactionState()
       );
-      if (maxContext === null) {
+      const limit = session.maxContext;
+      if (limit === null) {
         return condensed;
       }
       return compactMessages(condensed, {
-        maxContextTokens: maxContext,
+        maxContextTokens: limit,
         reservedOutputTokens: RESERVED_OUTPUT_TOKENS,
-        compactThresholdRatio: 0.8,
-        targetRatio: 0.6,
+        compactThresholdRatio: COMPACT_THRESHOLD_RATIO,
+        targetRatio: COMPACT_TARGET_RATIO,
+        enforceTarget: true,
         recentMessagesToKeep: 12
       }).messages;
     });
@@ -1693,11 +1700,22 @@ class AgentSessionService {
     ]);
   }
 
-  /** Runs pre-turn session preparation. */
+  /** Picks up a context length typed in settings after this session started. */
+  private async refreshMaxContext(session: AgentSession): Promise<void> {
+    const stored = await globalSettingService.resolveModelMaxContext(
+      session.modelId
+    );
+    session.maxContext = await resolveAgentSessionMaxContext(
+      stored,
+      session.apiClient
+    );
+  }
+
   private async runBeforeTurn(
     session: AgentSession,
     client: ChatClient
   ): Promise<void> {
+    await this.refreshMaxContext(session);
     await this.refreshSystemPrompt(session, client);
     await session.workspace.prepareTurn();
     await this.refreshAgentTools(session);

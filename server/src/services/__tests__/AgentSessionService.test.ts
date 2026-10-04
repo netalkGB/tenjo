@@ -102,4 +102,8 @@ describe('resolveAgentSessionMaxContext', () => {
       8192
     );
   });
+
+  it('uses a manually stored context length for non-local providers', async () => {
+    await expect(resolveAgentSessionMaxContext(65536, {})).resolves.toBe(65536);
+  });
 });

@@ -48,3 +48,17 @@ export function validateUserName(
   }
   return null;
 }
+
+/**
+ * Blank input is unset (`undefined`). A positive integer is that number.
+ * Anything else is invalid (`null`).
+ */
+export function parseOptionalPositiveInt(
+  value: string
+): number | undefined | null {
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+  if (!/^[1-9]\d*$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}

@@ -32,6 +32,22 @@ export async function addModel(data: AddModelRequest): Promise<Model> {
   }
 }
 
+export async function updateModelMaxContext(
+  id: string,
+  maxContextLength: number | null
+): Promise<Model> {
+  try {
+    const response = await axios.patch(
+      `/api/settings/models/${id}/context-length`,
+      { maxContextLength }
+    );
+    const validated = z.object({ model: ModelSchema }).parse(response.data);
+    return validated.model;
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
 export async function deleteModel(id: string): Promise<void> {
   try {
     await axios.delete(`/api/settings/models/${id}`);

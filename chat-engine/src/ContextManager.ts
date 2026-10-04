@@ -65,8 +65,14 @@ export interface CompactionOptions {
    * Soft target the compaction aims to bring usage back down to, as a fraction
    * of the window. Default 0.4. Reached by trimming only OLD output; the recent
    * window is never sacrificed just to hit this target.
+   * With `enforceTarget`, the later pass keeps shortening until this target.
    */
   targetRatio?: number;
+  /**
+   * When true, keep shortening recent text and tool arguments until usage is at
+   * or below `targetRatio`, not only until the overflow budget.
+   */
+  enforceTarget?: boolean;
   /** Most recent N messages kept verbatim (never trimmed by the soft pass). Default 8. */
   recentMessagesToKeep?: number;
   /** Char cap applied to older tool/text contents in the first tier. Default 2000. */
@@ -269,9 +275,10 @@ export function stripThinkingFromMessages(
  * WITHOUT dropping or reordering any message. The text content of older messages
  * is truncated, and the base64 of older images is evicted (the model has already
  * seen them, but their bytes otherwise ride along on every later request); the
- * system message (index 0) and the final message are always left intact, and
- * `tool_calls` arrays are never touched — so every assistant tool_call keeps its
- * matching tool result and the request stays structurally valid.
+ * system message (index 0) and the final message are always left intact.
+ * Tool-call ids and names stay put so each call still matches its result. The
+ * argument strings are shortened only when content truncation is not enough to
+ * get under the hard budget; the shortened value is still a JSON object.
  *
  * Two stages, because avoiding the overflow ERROR and preserving model QUALITY
  * are different goals:
@@ -301,6 +308,7 @@ export function compactMessages(
     options.recentMessagesToKeep ?? DEFAULT_RECENT_MESSAGES_TO_KEEP;
   const toolCap = options.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS;
   const marker = options.truncationMarker ?? defaultTruncationMarker;
+  const enforceTarget = options.enforceTarget ?? false;
 
   const hardBudget = Math.max(0, options.maxContextTokens - reserved);
   const triggerAt = options.maxContextTokens * threshold;
@@ -316,23 +324,53 @@ export function compactMessages(
   // from the original, so re-running at a smaller cap never nests markers).
   // `oldCap` applies to messages before the recent window; `recentCap`
   // (Infinity = untouched) to the recent window. System + last are never cut.
-  // OLD images additionally have their base64 evicted (independent of the char
-  // caps, so it also runs in the no-truncation pass); recent images are kept so
-  // the active task can still reference a just-attached screenshot.
-  const build = (oldCap: number, recentCap: number): MessageRequest[] =>
+  // `argCap` null leaves tool arguments alone. A number caps them on every
+  // non-protected message. OLD images additionally have their base64 evicted
+  // (independent of the char caps, so it also runs in the no-truncation pass);
+  // recent images are kept so the active task can still reference a just-attached
+  // screenshot.
+  const build = (
+    oldCap: number,
+    recentCap: number,
+    argCap: number | null
+  ): MessageRequest[] =>
     messages.map((message, index) => {
       const isProtected = (index === 0 && hasSystem) || index === lastIdx;
       if (isProtected) return message;
       const isOld = index < recentStart;
+      let next = message;
       if (typeof message.content !== 'string') {
-        return isOld ? evictImageParts(message) : message;
+        if (isOld) next = evictImageParts(message);
+      } else {
+        const cap = isOld ? oldCap : recentCap;
+        if (message.content.length > cap) {
+          next = {
+            ...message,
+            content: truncateContent(message.content, cap, marker),
+          };
+        }
       }
-      const cap = isOld ? oldCap : recentCap;
-      if (message.content.length <= cap) return message;
-      return {
-        ...message,
-        content: truncateContent(message.content, cap, marker),
-      };
+      if (argCap === null || !next.tool_calls || next.tool_calls.length === 0) {
+        return next;
+      }
+      let argsChanged = false;
+      const tool_calls = next.tool_calls.map((call) => {
+        if (call.function.arguments.length <= argCap) return call;
+        argsChanged = true;
+        return {
+          ...call,
+          function: {
+            ...call.function,
+            arguments:
+              argCap <= 0
+                ? '{}'
+                : JSON.stringify({
+                    _omitted: call.function.arguments.slice(0, argCap),
+                  }),
+          },
+        };
+      });
+      return argsChanged ? { ...next, tool_calls } : next;
     });
 
   // True when an OLD (pre-recent-window, non-system) message still carries an
@@ -352,7 +390,7 @@ export function compactMessages(
     // old image base64 so an image-heavy session does not grow the on-wire
     // payload unbounded. Silent (compacted=false) to avoid a per-turn log once
     // an image has scrolled out of the recent window.
-    const trimmed = hasOldImages ? build(Infinity, Infinity) : messages;
+    const trimmed = hasOldImages ? build(Infinity, Infinity, null) : messages;
     return {
       messages: trimmed,
       compacted: false,
@@ -367,22 +405,28 @@ export function compactMessages(
   let compacted = messages;
   let after = before;
   for (const oldCap of [toolCap, 1000, 500, 200]) {
-    compacted = build(oldCap, Infinity);
+    compacted = build(oldCap, Infinity, null);
     after = estimateMessagesTokens(compacted);
     if (after <= softTarget) break;
   }
 
-  // Stage 2 — hard pass: only if we are still over the hard budget (for example the
+  // Stage 2 — hard pass: only if we are still over the hard budget (the
   // recent window alone is enormous), encroach on the recent window too.
-  if (after > hardBudget) {
-    for (const [oldCap, recentCap] of [
-      [200, 4000],
-      [200, 1500],
-      [200, 400],
-    ] as Array<[number, number]>) {
-      compacted = build(oldCap, recentCap);
+  // `enforceTarget` uses the same steps to reach the quality target, which can
+  // sit well below the overflow budget.
+  const stageTwoLimit = enforceTarget ? softTarget : hardBudget;
+  if (after > stageTwoLimit) {
+    for (const [oldCap, recentCap, argCap] of [
+      [200, 4000, null],
+      [200, 1500, null],
+      [200, 400, null],
+      [200, 400, 2000],
+      [200, 400, 200],
+      [200, 400, 0],
+    ] as Array<[number, number, number | null]>) {
+      compacted = build(oldCap, recentCap, argCap);
       after = estimateMessagesTokens(compacted);
-      if (after <= hardBudget) break;
+      if (after <= stageTwoLimit) break;
     }
   }
 

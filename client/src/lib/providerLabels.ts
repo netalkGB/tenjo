@@ -17,6 +17,11 @@ export function formatProviderLabel(type: string): string {
   return PROVIDER_LABELS[type] ?? type;
 }
 
+/** OpenAI and OpenAI-compatible servers do not publish a context window. */
+export function usesManualContextLength(type: string): boolean {
+  return type === 'openai' || type === 'openai-compatible';
+}
+
 /**
  * Build a human-readable label for a model. When two models share the same
  * display name the base URL is appended to keep them distinguishable.

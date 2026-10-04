@@ -56,6 +56,7 @@ import {
 import {
   ModelNotFoundError,
   ModelDuplicateError,
+  ModelContextLengthError,
   BrandingValidationError
 } from '../../services/GlobalSettingService';
 import {
@@ -177,6 +178,8 @@ interface AddModelRequest {
     baseUrl: string;
     model: string;
     token?: string;
+    /** OpenAI-compatible models only. Omitted means compaction stays off. */
+    maxContextLength?: number;
   };
 }
 
@@ -209,11 +212,12 @@ settingsRouter.post(
           );
         }
 
-        const maxContextLength = await fetchMaxContextLength(
+        const maxContextLength = await resolveMaxContextLength(
           type,
           baseUrl,
           model,
-          token || null
+          token || null,
+          req.body.maxContextLength
         );
 
         const newEntry = await globalSettingService.addModel(
@@ -222,7 +226,7 @@ settingsRouter.post(
             baseUrl,
             model,
             token: token || undefined,
-            maxContextLength: maxContextLength ?? undefined
+            maxContextLength
           },
           sessionUser.id
         );
@@ -236,6 +240,60 @@ settingsRouter.post(
       }
     }
   )
+);
+
+/*
+ * PATCH /api/settings/models/:id/context-length
+ * Sets or clears the manually entered context window (admin only).
+ */
+interface UpdateModelContextRequest {
+  params: { id: string };
+  body: {
+    maxContextLength: number | null;
+  };
+}
+
+interface UpdateModelContextResponse {
+  model: ModelEntryResponse;
+}
+
+settingsRouter.patch(
+  '/models/:id/context-length',
+  requireCsrfToken,
+  requireAuth,
+  requireAdmin,
+  typedHandler<
+    UpdateModelContextRequest,
+    UpdateModelContextResponse | ErrorResponse
+  >(async (req, res) => {
+    try {
+      const sessionUser = req.user as SessionUser;
+      const maxContextLength =
+        req.body.maxContextLength === null
+          ? null
+          : parseManualMaxContextLength(req.body.maxContextLength);
+      if (maxContextLength === undefined) {
+        throw new HttpError(
+          StatusCodes.BAD_REQUEST,
+          'maxContextLength must be a positive integer or null'
+        );
+      }
+      const model = await globalSettingService.updateModelMaxContext(
+        req.params.id,
+        maxContextLength,
+        sessionUser.id
+      );
+      res.json({ model });
+    } catch (err) {
+      if (err instanceof ModelNotFoundError) {
+        throw new HttpError(StatusCodes.NOT_FOUND, err.message);
+      }
+      if (err instanceof ModelContextLengthError) {
+        throw new HttpError(StatusCodes.BAD_REQUEST, err.message);
+      }
+      throw err;
+    }
+  })
 );
 
 /*
@@ -615,6 +673,43 @@ settingsRouter.put(
     res.json({ success: true, tools });
   })
 );
+
+function usesManualContextLength(type: ModelEntry['type']): boolean {
+  return type === 'openai' || type === 'openai-compatible';
+}
+
+/** A positive integer, or undefined when the field was left blank. */
+function parseManualMaxContextLength(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new HttpError(
+      StatusCodes.BAD_REQUEST,
+      'maxContextLength must be a positive integer'
+    );
+  }
+  return value;
+}
+
+/**
+ * OpenAI-compatible models keep the typed length. LM Studio and Ollama read
+ * theirs from the provider. A blank field stays unset, so compaction stays off.
+ */
+async function resolveMaxContextLength(
+  type: ModelEntry['type'],
+  baseUrl: string,
+  model: string,
+  token: string | null,
+  manual: unknown
+): Promise<number | undefined> {
+  if (usesManualContextLength(type)) {
+    return parseManualMaxContextLength(manual);
+  }
+  return (
+    (await fetchMaxContextLength(type, baseUrl, model, token)) ?? undefined
+  );
+}
 
 async function fetchMaxContextLength(
   type: ModelEntry['type'],

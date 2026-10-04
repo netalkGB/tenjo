@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatProviderLabel,
-  MODEL_PROVIDER_OPTIONS
+  MODEL_PROVIDER_OPTIONS,
+  usesManualContextLength
 } from '@/lib/providerLabels';
 
 describe('providerLabels', () => {
@@ -17,5 +18,12 @@ describe('providerLabels', () => {
       value: 'openai-compatible',
       label: 'OpenAI Compatible'
     });
+  });
+
+  it('asks for a typed context length only on OpenAI providers', () => {
+    expect(usesManualContextLength('openai')).toBe(true);
+    expect(usesManualContextLength('openai-compatible')).toBe(true);
+    expect(usesManualContextLength('lmstudio')).toBe(false);
+    expect(usesManualContextLength('ollama')).toBe(false);
   });
 });

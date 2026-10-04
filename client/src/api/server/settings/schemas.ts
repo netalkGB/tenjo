@@ -50,6 +50,7 @@ export interface AddModelRequest {
   baseUrl: string;
   model: string;
   token?: string;
+  maxContextLength?: number;
 }
 
 export const AvailableModelSchema = z.object({

@@ -33,7 +33,11 @@ import {
   CommandList
 } from '@/components/ui/command';
 import { getAvailableModels } from '@/api/server/settings/models';
-import { MODEL_PROVIDER_OPTIONS } from '@/lib/providerLabels';
+import {
+  MODEL_PROVIDER_OPTIONS,
+  usesManualContextLength
+} from '@/lib/providerLabels';
+import { parseOptionalPositiveInt } from '@/lib/validation';
 import type { AvailableModel, Model } from '@/api/server/settings/schemas';
 
 const DEBOUNCE_MS = 1000;
@@ -46,6 +50,7 @@ interface AddModelDialogProps {
     baseUrl: string;
     model: string;
     token?: string;
+    maxContextLength?: number;
   }) => Promise<void>;
   existingModels: Model[];
 }
@@ -61,7 +66,8 @@ export function AddModelDialog({
     type: 'lmstudio',
     baseUrl: '',
     model: '',
-    token: ''
+    token: '',
+    maxContextLength: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
@@ -77,7 +83,13 @@ export function AddModelDialog({
     );
 
   const resetForm = () => {
-    setForm({ type: 'lmstudio', baseUrl: '', model: '', token: '' });
+    setForm({
+      type: 'lmstudio',
+      baseUrl: '',
+      model: '',
+      token: '',
+      maxContextLength: ''
+    });
     setAvailableModels([]);
     setModelsFetched(false);
     if (debounceTimerRef.current) {
@@ -91,15 +103,22 @@ export function AddModelDialog({
     onClose();
   };
 
+  const manualContext = usesManualContextLength(form.type);
+  const parsedContextLength = manualContext
+    ? parseOptionalPositiveInt(form.maxContextLength)
+    : undefined;
+  const contextLengthInvalid = parsedContextLength === null;
+
   const handleAdd = async () => {
-    if (!form.baseUrl || !form.model) return;
+    if (!form.baseUrl || !form.model || contextLengthInvalid) return;
     setIsSubmitting(true);
     try {
       await onAdd({
         type: form.type,
         baseUrl: form.baseUrl,
         model: form.model,
-        token: form.token || undefined
+        token: form.token || undefined,
+        maxContextLength: parsedContextLength
       });
       resetForm();
     } finally {
@@ -168,7 +187,13 @@ export function AddModelDialog({
             <Select
               value={form.type}
               onValueChange={value =>
-                setForm(prev => ({ ...prev, type: value }))
+                setForm(prev => ({
+                  ...prev,
+                  type: value,
+                  maxContextLength: usesManualContextLength(value)
+                    ? prev.maxContextLength
+                    : ''
+                }))
               }
             >
               <SelectTrigger data-testid="settings-model-add-provider-select">
@@ -295,6 +320,36 @@ export function AddModelDialog({
               </button>
             )}
           </div>
+          {manualContext && (
+            <div className="space-y-2">
+              <Label>{t('settings_max_context_length')}</Label>
+              <Input
+                inputMode="numeric"
+                placeholder={t('settings_max_context_length_placeholder')}
+                value={form.maxContextLength}
+                onChange={e =>
+                  setForm(prev => ({
+                    ...prev,
+                    maxContextLength: e.target.value
+                  }))
+                }
+                aria-invalid={contextLengthInvalid}
+                data-testid="settings-model-add-context-length-input"
+              />
+              <p
+                className={cn(
+                  'text-xs',
+                  contextLengthInvalid
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                )}
+              >
+                {contextLengthInvalid
+                  ? t('settings_max_context_length_invalid')
+                  : t('settings_max_context_length_hint')}
+              </p>
+            </div>
+          )}
           {isDuplicate && (
             <p className="text-sm text-destructive">
               {t('settings_model_duplicate')}
@@ -312,7 +367,11 @@ export function AddModelDialog({
           <Button
             onClick={handleAdd}
             disabled={
-              !form.baseUrl || !form.model || isSubmitting || isDuplicate
+              !form.baseUrl ||
+              !form.model ||
+              isSubmitting ||
+              isDuplicate ||
+              contextLengthInvalid
             }
             data-testid="settings-model-add-submit-button"
           >

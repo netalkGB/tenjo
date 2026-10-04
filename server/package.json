@@ -1,6 +1,6 @@
 {
   "name": "tenjo-server",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "scripts": {
     "build": "tsc",
@@ -46,7 +46,7 @@
     "supertest": "^7.1.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.11"
   },
   "description": "",
   "main": "index.js",

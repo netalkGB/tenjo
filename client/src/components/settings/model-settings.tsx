@@ -1,9 +1,21 @@
 import { useTranslation } from '@/hooks/useTranslation';
 import { useState } from 'react';
-import { addModel, deleteModel } from '@/api/server/settings';
-import { formatProviderLabel } from '@/lib/providerLabels';
+import {
+  addModel,
+  deleteModel,
+  updateModelMaxContext,
+  type Model
+} from '@/api/server/settings';
+import {
+  formatProviderLabel,
+  usesManualContextLength
+} from '@/lib/providerLabels';
+import { parseOptionalPositiveInt } from '@/lib/validation';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trash2, Plus, Info } from 'lucide-react';
 import {
@@ -15,6 +27,70 @@ import { useDialog } from '@/hooks/useDialog';
 import { useUser } from '@/hooks/useUser';
 import { useSettings } from '@/contexts/settings-context';
 import { AddModelDialog } from '@/components/settings/add-model-dialog';
+
+function ManualContextLengthInput({
+  model,
+  onSave
+}: {
+  model: Model;
+  onSave: (id: string, maxContextLength: number | null) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(
+    model.maxContextLength != null ? String(model.maxContextLength) : ''
+  );
+  const [saving, setSaving] = useState(false);
+  const parsed = parseOptionalPositiveInt(text);
+  const invalid = parsed === null;
+  const current =
+    model.maxContextLength != null ? String(model.maxContextLength) : '';
+  const changed = text.trim() !== current;
+
+  const handleSave = async () => {
+    if (parsed === null || !changed) return;
+    setSaving(true);
+    try {
+      await onSave(model.id, parsed ?? null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 max-w-xs space-y-2">
+      <Label htmlFor={`model-context-${model.id}`}>
+        {t('settings_max_context_length')}
+      </Label>
+      <Input
+        id={`model-context-${model.id}`}
+        inputMode="numeric"
+        value={text}
+        placeholder={t('settings_max_context_length_placeholder')}
+        onChange={e => setText(e.target.value)}
+        aria-invalid={invalid}
+        data-testid={`settings-model-context-length-${model.id}`}
+      />
+      <p
+        className={cn(
+          'text-xs',
+          invalid ? 'text-destructive' : 'text-muted-foreground'
+        )}
+      >
+        {invalid
+          ? t('settings_max_context_length_invalid')
+          : t('settings_max_context_length_hint')}
+      </p>
+      <Button
+        size="sm"
+        onClick={handleSave}
+        disabled={saving || invalid || !changed}
+        data-testid={`settings-model-context-length-save-${model.id}`}
+      >
+        {t('save')}
+      </Button>
+    </div>
+  );
+}
 
 function ModelListSkeleton() {
   return (
@@ -49,6 +125,7 @@ export function ModelSettings() {
     baseUrl: string;
     model: string;
     token?: string;
+    maxContextLength?: number;
   }) => {
     try {
       await addModel(model);
@@ -58,6 +135,22 @@ export function ModelSettings() {
       openDialog({
         title: t('error'),
         description: t('error_add_model'),
+        type: 'ok'
+      });
+    }
+  };
+
+  const handleContextLength = async (
+    id: string,
+    maxContextLength: number | null
+  ) => {
+    try {
+      await updateModelMaxContext(id, maxContextLength);
+      await reloadModels();
+    } catch {
+      openDialog({
+        title: t('error'),
+        description: t('error_update_model_context'),
         type: 'ok'
       });
     }
@@ -146,13 +239,28 @@ export function ModelSettings() {
                       {formatProviderLabel(model.type)}
                     </span>
                     {model.baseUrl}
-                    {model.maxContextLength != null && (
-                      <span className="ml-2">
-                        ({t('settings_max_context_length')}:{' '}
-                        {model.maxContextLength.toLocaleString()})
-                      </span>
-                    )}
+                    {model.maxContextLength != null &&
+                      !usesManualContextLength(model.type) && (
+                        <span className="ml-2">
+                          ({t('settings_max_context_length')}:{' '}
+                          {model.maxContextLength.toLocaleString()})
+                        </span>
+                      )}
                   </div>
+                  {isAdmin && usesManualContextLength(model.type) && (
+                    <ManualContextLengthInput
+                      model={model}
+                      onSave={handleContextLength}
+                    />
+                  )}
+                  {!isAdmin &&
+                    usesManualContextLength(model.type) &&
+                    model.maxContextLength != null && (
+                      <div className="text-sm text-muted-foreground">
+                        {t('settings_max_context_length')}:{' '}
+                        {model.maxContextLength.toLocaleString()}
+                      </div>
+                    )}
                 </div>
                 {isAdmin && (
                   <Tooltip>

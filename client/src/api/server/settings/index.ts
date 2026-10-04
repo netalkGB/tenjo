@@ -25,7 +25,13 @@ export type {
   UpdateMcpServersResponse
 } from './schemas';
 export { getProfile, updateProfile, updatePassword } from './profile';
-export { getModels, addModel, deleteModel, setActiveModel } from './models';
+export {
+  getModels,
+  addModel,
+  updateModelMaxContext,
+  deleteModel,
+  setActiveModel
+} from './models';
 export {
   getInvitationCodes,
   createInvitationCode,

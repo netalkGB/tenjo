@@ -156,6 +156,33 @@ describe('POST /api/settings/models', () => {
       baseUrl: 'https://api.openai-compatible.example',
       model: 'new-model'
     });
+    expect(res.body.model.maxContextLength).toBeUndefined();
+  });
+
+  it('stores a manually entered context length for OpenAI-compatible models', async () => {
+    const res = await adminAgent
+      .post('/api/settings/models')
+      .send({
+        type: 'openai-compatible',
+        baseUrl: 'http://localhost:8080',
+        model: 'qwen-next',
+        maxContextLength: 65536
+      })
+      .expect(200);
+
+    expect(res.body.model.maxContextLength).toBe(65536);
+  });
+
+  it('returns 400 when maxContextLength is not a positive integer', async () => {
+    await adminAgent
+      .post('/api/settings/models')
+      .send({
+        type: 'openai-compatible',
+        baseUrl: 'http://localhost:8080',
+        model: 'qwen-next',
+        maxContextLength: 0
+      })
+      .expect(400);
   });
 
   // Token storage requires pgcrypto (pgp_sym_encrypt) which may not be
@@ -209,6 +236,30 @@ describe('POST /api/settings/models', () => {
         model: 'test'
       })
       .expect(403);
+  });
+
+  it('updates and clears a manual context length', async () => {
+    const created = await adminAgent
+      .post('/api/settings/models')
+      .send({
+        type: 'openai-compatible',
+        baseUrl: 'http://localhost:8080',
+        model: 'editable-model'
+      })
+      .expect(200);
+
+    const id = created.body.model.id as string;
+    const updated = await adminAgent
+      .patch(`/api/settings/models/${id}/context-length`)
+      .send({ maxContextLength: 32768 })
+      .expect(200);
+    expect(updated.body.model.maxContextLength).toBe(32768);
+
+    const cleared = await adminAgent
+      .patch(`/api/settings/models/${id}/context-length`)
+      .send({ maxContextLength: null })
+      .expect(200);
+    expect(cleared.body.model.maxContextLength).toBeUndefined();
   });
 });
 
